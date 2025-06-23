@@ -1,0 +1,22 @@
+.{
+    .name = .AuraCore,
+    .version = "0.0.1",
+    .fingerprint = 0x3606e5ccc8fc79b0,
+
+    .dependencies = .{
+        .zap = .{
+            .url = "git+https://github.com/zigzap/zap.git#master",
+            .hash = "zap-0.9.1-GoeB85JTJAADY1vAnA4lTuU66t6JJiuhGos5ex6CpifA",
+        },
+        .jwt = .{
+            .url = "git+https://github.com/leroycep/zig-jwt.git#master",
+            .hash = "jwt-0.0.1-HbWOu6Y-AAAazOpY5quBwgxLtHBcZxtfMn7OCim45glZ",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
