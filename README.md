@@ -3,7 +3,7 @@ Core of Aura home system.
 A home ecosystem writen in Zig.
 
 Other Aura repos:
-- MainFrame
+- MainFrame: https://github.com/PsychoB00/AuraMainFrame
 
 Third party code used:
 - Networking
