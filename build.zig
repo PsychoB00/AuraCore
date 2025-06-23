@@ -14,11 +14,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const core_mod = b.createModule(.{
-        .root_source_file = b.path("src/core.zig"),
-        .target = target,
-        .optimize = optimize,
+    _ = b.addModule("core", .{
+        .root_source_file = .{
+            .src_path = .{
+                .owner = b,
+                .sub_path = "src/core.zig",
+            },
+        },
+        .imports = &[_]std.Build.Module.Import{
+            .{ .name = "zap", .module = zap.module("zap") },
+            .{ .name = "jwt", .module = jwt.module("jwt") },
+        },
     });
-    core_mod.addImport("zap", zap.module("zap"));
-    core_mod.addImport("jwt", jwt.module("jwt"));
 }
