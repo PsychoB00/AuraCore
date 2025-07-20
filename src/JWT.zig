@@ -1,6 +1,5 @@
 /// STD
 const std = @import("std");
-const log = std.log;
 const Allocator = std.mem.Allocator;
 
 /// Thrid Party

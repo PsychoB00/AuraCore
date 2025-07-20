@@ -4,6 +4,11 @@
     .fingerprint = 0x3606e5ccc8fc79b0,
 
     .dependencies = .{
+        .zeit = .{
+            .url = "git+https://github.com/rockorager/zeit.git#main",
+            .hash = "zeit-0.6.0-5I6bk697AgAjrCWnmInbXTZ98avC1JtELxiYd-YU9cc2",
+        },
+
         .zap = .{
             .url = "git+https://github.com/zigzap/zap.git#master",
             .hash = "zap-0.9.1-GoeB85JTJAADY1vAnA4lTuU66t6JJiuhGos5ex6CpifA",

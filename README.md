@@ -6,6 +6,8 @@ Other Aura repos:
 - MainFrame: https://github.com/PsychoB00/AuraMainFrame
 
 Third party code used:
+- Time
+    - zeit: https://github.com/rockorager/zeit.git
 - Networking
     - zap: https://github.com/zigzap/zap
     - jwt: https://github.com/leroycep/zig-jwt

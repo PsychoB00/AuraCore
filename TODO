@@ -1,0 +1,5 @@
+Log and Logger:
+    - Code review, readiability, correctness, etc.
+
+JWT:
+    - Make a pub jwt struct instead of having every struct public
