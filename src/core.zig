@@ -1,7 +1,8 @@
 pub const dome = @embedFile("resources/aura_dome.svg");
 
+pub const utils = @import("Utils.zig").utils;
 pub const log = @import("Log.zig").log;
-
-pub const JWTPayload = @import("JWT.zig").JWTPayload;
-pub const JWTAuthenticator = @import("JWT.zig").JWTAuthenticator;
-pub const JWTAuthEndpoint = @import("JWT.zig").JWTAuthEndpoint;
+pub const jwt = @import("JWT.zig").jwt;
+pub const router = @import("Router.zig").router;
+pub const static_resource = @import("StaticResource.zig").static_resource;
+pub const api_resource = @import("APIResource.zig").api_resource;

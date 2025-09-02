@@ -1,21 +1,26 @@
 .{
     .name = .AuraCore,
-    .version = "0.0.1",
+    .version = "0.0.2",
     .fingerprint = 0x3606e5ccc8fc79b0,
 
     .dependencies = .{
         .zeit = .{
-            .url = "git+https://github.com/rockorager/zeit.git#main",
-            .hash = "zeit-0.6.0-5I6bk697AgAjrCWnmInbXTZ98avC1JtELxiYd-YU9cc2",
+            .url = "git+https://github.com/rockorager/zeit.git#zig-0.15",
+            .hash = "zeit-0.6.0-5I6bk0J9AgCVa0nnyL0lNY9Xa9F68hHq-ZarhuXNV-Jb",
+        },
+
+        .zimdjson = .{
+            .url = "git+https://github.com/EzequielRamis/zimdjson.git#0.15.x",
+            .hash = "zimdjson-0.2.0-89pgxYQsBgAdkYbZS5mcwkP_LfXRQ8ync3komv9QVoOc",
         },
 
         .zap = .{
-            .url = "git+https://github.com/zigzap/zap.git#master",
-            .hash = "zap-0.9.1-GoeB85JTJAADY1vAnA4lTuU66t6JJiuhGos5ex6CpifA",
+            .url = "git+https://github.com/zigzap/zap#v0.11.0",
+            .hash = "zap-0.10.6-GoeB8xCEJABLgoiZjWZMMT5TsoZ5OO2EZe6j24RTUYEH",
         },
         .jwt = .{
             .url = "git+https://github.com/leroycep/zig-jwt.git#master",
-            .hash = "jwt-0.0.1-HbWOu6Y-AAAazOpY5quBwgxLtHBcZxtfMn7OCim45glZ",
+            .hash = "jwt-0.0.1-HbWOuxtAAAApNHYj9q0gpHAyJo-2SvtyE4SlIDUliJgE",
         },
     },
 

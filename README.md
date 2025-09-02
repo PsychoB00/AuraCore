@@ -7,7 +7,9 @@ Other Aura repos:
 
 Third party code used:
 - Time
-    - zeit: https://github.com/rockorager/zeit.git
+    - zeit: https://github.com/rockorager/zeit
+- JSON
+    - zimdjson: https://github.com/EzequielRamis/zimdjson
 - Networking
     - zap: https://github.com/zigzap/zap
     - jwt: https://github.com/leroycep/zig-jwt

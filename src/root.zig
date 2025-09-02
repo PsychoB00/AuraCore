@@ -1,42 +1,102 @@
 /// STD
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 /// Aura
-const log = @import("core").log;
-
-const LoggerOptions = log.LoggerOptions{};
-const LogOptions = log.LogOptions{};
-const LogFmtOptions = log.LogFmtOptions{};
-
-const Log = log.Log(LogOptions);
-const LogProcessor = log.ConsoleLogProcessor(Log, LogFmtOptions);
-const Logger = log.Logger(LoggerOptions, Log, LogProcessor);
+const core = @import("core.zig");
+const ResourceTreeOptions = core.router.ResourceTreeOptions;
+const ResourceTree = core.router.ResourceTree;
+const PathParameters = core.api_resource.PathParameters;
+const QueryParameters = core.api_resource.QueryParameters;
+const BodyParameters = core.api_resource.BodyParameters;
 
 /// Third Party
+const zap = @import("zap");
+const Request = zap.Request;
+const StatusCode = zap.http.StatusCode;
+
 const zeit = @import("zeit");
+const Time = zeit.Time;
+
+const Context = struct {
+    a: u32 = 32,
+    b: bool = false,
+};
+
+const ItemModel = struct {
+    id: u64,
+    name: []const u8 = "NOT_FOUND",
+    valid: ?bool,
+    made_at: Time,
+};
+
+const html = "<!DOCTYPE html><html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>";
+
+const APIController = struct {
+    pub const api = struct {
+        pub const items = struct {
+            pub fn post(
+                body_params: *const BodyParameters(ItemModel),
+            ) !StatusCode {
+                std.debug.print("{} {s} {?} {}\n", .{ body_params.data.id, body_params.data.name, body_params.data.valid, body_params.data.made_at });
+                return .ok;
+            }
+        };
+    };
+};
+
+const IndexController = struct {
+    pub const index = core.static_resource.StaticResource(.html, html);
+};
+
+const Router = core.router.Router(
+    .{
+        ResourceTree(
+            IndexController,
+            ResourceTreeOptions{
+                .resource_type = .static,
+                .authenticated = false,
+            },
+        ),
+        ResourceTree(
+            APIController,
+            ResourceTreeOptions{
+                .resource_type = .api,
+                .authenticated = false,
+            },
+        ),
+    },
+    Context,
+    core.jwt.JWTAuthenticator,
+);
 
 pub fn main() !void {
-    const allocator = std.heap.page_allocator;
-    var env = std.process.EnvMap.init(allocator);
-    defer env.deinit();
-    const timezone = try zeit.local(allocator, &env);
+    var gpa: std.heap.GeneralPurposeAllocator(.{
+        .thread_safe = true,
+    }) = .{};
+    defer std.debug.print("\n\nLeaks detected: {}\n\n", .{gpa.deinit() != .ok});
+    const allocator = gpa.allocator();
 
-    var logger = Logger.init(&timezone);
-    try logger.spawn();
-    defer logger.join();
+    var my_context: Context = .{};
 
-    var t1 = try std.Thread.spawn(.{}, run, .{ "thread1", &logger });
-    defer t1.join();
-    var t2 = try std.Thread.spawn(.{}, run, .{ "thread2", &logger });
-    defer t2.join();
-    var t3 = try std.Thread.spawn(.{}, run, .{ "thread3", &logger });
-    defer t3.join();
-    var t4 = try std.Thread.spawn(.{}, run, .{ "thread4", &logger });
-    defer t4.join();
-}
+    const App = zap.App.Create(Context);
+    try App.init(allocator, &my_context, .{});
+    defer App.deinit();
 
-fn run(name: []const u8, logger: *Logger) void {
-    for (0..10) |i| {
-        logger.log(.debug).time().scope("TestExe/main").printFmt("{s} has {}", .{ name, i }).src(@src()).commit();
-    }
+    var authenticator = try core.jwt.JWTAuthenticator.init(allocator, "12345", null);
+    defer authenticator.deinit();
+
+    var router: Router = undefined;
+    try router.init(&authenticator);
+
+    try App.listen(.{
+        .interface = "127.0.0.1",
+        .port = 3000,
+    });
+
+    // start worker threads
+    zap.start(.{
+        .threads = 2,
+        .workers = 1,
+    });
 }

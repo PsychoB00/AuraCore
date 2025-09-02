@@ -1,5 +1,6 @@
 /// STD
 const std = @import("std");
+
 const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const atomic = std.atomic.Value;
@@ -70,11 +71,11 @@ pub const log = struct {
 
     /// Multi-thread safe, statically sized Logger
     ///
-    /// - To log call `log`, which will return a pointer to reserved Log. Make sure you call `commit` on it
+    /// - To log call `log`, which will return a pointer to reserved Log. Make sure you call `commit` or `rollback` on it
     ///   after, otherwise the Log will be pernamently reserved in `log_pool`, exhausting it.
     /// - Requesting Log when `log_pool` has been exhausted will lead to blocking of requesting thread. Ensure that `Options.log_pool_size` is set
     ///   appropriately to the amount of threads utilizing this Logger, frequency of Log requests and compexity of Log processing.
-    /// - LogProcessor handles the processing of collected Logs. It must be a type which must contain method `init` and methode for
+    /// - LogProcessor handles the processing of collected Logs. It must be a type which contains method `init` and methode for
     ///   Log processing `processLog`.
     pub fn Logger(comptime Options: LoggerOptions, comptime LogType: type, comptime LogProcessorType: type) type {
         return struct {
@@ -192,7 +193,7 @@ pub const log = struct {
 
             /// Reserve Log with a `Level` in `log_pool`
             ///
-            /// MUST CALL `Log.commit` on the result
+            /// MUST CALL `Log.commit` or `Log.rollback` on the result
             pub fn log(self: *LoggerType, comptime LogLevel: Level) *LogType {
                 assert(self.thread_running.load(.acquire));
                 assert(self.thread != null);
@@ -225,11 +226,12 @@ pub const log = struct {
 
     /// Statically sized Log
     ///
-    /// - Log allows construction chaining (except of `printTryFmt`)
-    /// - Must call `commit` to set log for collecting
-    /// - Exceeding `Options.log_options.message_len` by length of message formated in `ptrintFmt` will cause panic. Therefore, if you are
-    ///   unsure about lenght of formated message use `printTryFmt` and `try` or `catch` the result.
-    /// - Log can be used by any Logger type which has opaque methode `_incrUncollected`
+    /// - Log allows construction chaining (except of `printTryFmt`).
+    /// - Must call `commit` to set Log for collecting or `rollback` to set Log for reserving.
+    /// - Exceeding `Options.message_len` by length of message formated in `printFmt` will cause panic. Therefore, if you are
+    ///   unsure about lenght of formated message use `printTryFmt` and `catch` the result. If error is caught when calling `printTryFmt`,
+    ///   the Log on which it was called IS STILL RESERVED in `log_pool` make sure it's properly commited or rolled-back.
+    /// - Log can be used by any Logger type which has opaque methode `_incrUncollected`.
     pub fn Log(comptime Options: LogOptions) type {
         return struct {
             const LogType = Log(Options);
@@ -341,6 +343,7 @@ pub const log = struct {
             /// Formats a message and sets it
             ///
             /// If formated message length is over `Options.message_len`, function will return BufPrintError.
+            /// If this function returns an error, the Log is still reserved.
             pub fn printTryFmt(self: *LogType, comptime Fmt: []const u8, args: anytype) !*LogType {
                 comptime if (Options.message_len < Fmt.len)
                     @compileError(
@@ -370,11 +373,23 @@ pub const log = struct {
                 self.state.store(.constructed, .release);
                 self.incr_uncollected_fn_ptr(self.logger);
             }
+
+            /// Rolls-back any changes to Log and sets it for reserving
+            pub fn rollback(self: *LogType) void {
+                self.level = null;
+                self.instant = null;
+                self.context = null;
+                self.context_len = null;
+                self.message = null;
+                self.message_len = null;
+                self.source_location = null;
+                self.state.store(.empty, .release);
+            }
         };
     }
 
     /// Formating functions for Log
-    pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
+    pub fn LogFmt(comptime Options: LogFmtOptions, comptime LogType: type) type {
         return struct {
             /// Writes `Log.level` to `writer` based on `Options.level_fmt`
             pub fn levelFmt(arg: *const LogType, writer: std.io.AnyWriter) void {
@@ -538,9 +553,9 @@ pub const log = struct {
     }
 
     /// LogProcessor for writing out Logs into console
-    pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptions) type {
+    pub fn ConsoleLogProcessor(comptime Options: LogFmtOptions, comptime LogType: type) type {
         return struct {
-            const LogProcessorType = ConsoleLogProcessor(LogType, Options);
+            const LogProcessorType = ConsoleLogProcessor(Options, LogType);
 
             timezone: *const zeit.TimeZone,
             out_writer: std.fs.File.Writer,
@@ -561,7 +576,7 @@ pub const log = struct {
                 self: *LogProcessorType,
                 processed_log: *const LogType,
             ) void {
-                LogFmt(LogType, Options).fmt(processed_log, self.out_writer.any(), self.timezone);
+                LogFmt(Options, LogType).fmt(processed_log, self.out_writer.any(), self.timezone);
             }
         };
     }

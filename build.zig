@@ -9,6 +9,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const zimdjson = b.dependency("zimdjson", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const zap = b.dependency("zap", .{
         .target = target,
         .optimize = optimize,
@@ -28,6 +33,7 @@ pub fn build(b: *std.Build) void {
         },
         .imports = &[_]std.Build.Module.Import{
             .{ .name = "zeit", .module = zeit.module("zeit") },
+            .{ .name = "zimdjson", .module = zimdjson.module("zimdjson") },
             .{ .name = "zap", .module = zap.module("zap") },
             .{ .name = "jwt", .module = jwt.module("jwt") },
         },
@@ -39,6 +45,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe_mod.addImport("zeit", zeit.module("zeit"));
+    exe_mod.addImport("zimdjson", zimdjson.module("zimdjson"));
     exe_mod.addImport("zap", zap.module("zap"));
     exe_mod.addImport("jwt", jwt.module("jwt"));
     exe_mod.addImport("core", core);
