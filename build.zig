@@ -1,8 +1,12 @@
 const std = @import("std");
 
+const getVersion = @import("src/version.zig").getVersion;
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const options = b.addOptions();
+    options.addOption(std.SemanticVersion, "core_version", getVersion());
 
     const zeit = b.dependency("zeit", .{
         .target = target,
@@ -28,7 +32,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{
             .src_path = .{
                 .owner = b,
-                .sub_path = "src/core.zig",
+                .sub_path = "src/root.zig",
             },
         },
         .imports = &[_]std.Build.Module.Import{
@@ -37,10 +41,13 @@ pub fn build(b: *std.Build) void {
             .{ .name = "zap", .module = zap.module("zap") },
             .{ .name = "jwt", .module = jwt.module("jwt") },
         },
+        .target = target,
+        .optimize = optimize,
     });
+    core.addOptions("core_options", options);
 
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/root.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -64,4 +71,18 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Run the TestExe");
     run_step.dependOn(&run_cmd.step);
+
+    const docs = b.addObject(.{
+        .name = "AuraCore",
+        .root_module = core,
+    });
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = docs.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Install docs");
+    docs_step.dependOn(&install_docs.step);
 }

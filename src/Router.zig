@@ -5,7 +5,7 @@ const Methode = std.http.Method;
 const comptimePrint = std.fmt.comptimePrint;
 
 /// Aura
-const core = @import("core.zig");
+const core = @import("root.zig");
 const static_resource = @import("StaticResource.zig").static_resource;
 const api_resource = @import("APIResource.zig").api_resource;
 const ResourceParametersError = api_resource.ResourceParametersError;
@@ -358,18 +358,21 @@ pub const router = struct {
                         }
 
                         var buffer: [resource_parameters_count]std.builtin.Type.StructField = undefined;
+                        var assign_index: usize = 0;
 
                         for (0..methode_parameters_info.@"struct".fields.len) |index| {
                             const resource_parameter_type = @typeInfo(methode_parameters_info.@"struct".fields[index].type).pointer.child;
 
-                            if (api_resource.isResourceParameters(resource_parameter_type))
-                                buffer[index] = .{
-                                    .name = std.fmt.comptimePrint("{}", .{index}),
+                            if (api_resource.isResourceParameters(resource_parameter_type)) {
+                                buffer[assign_index] = .{
+                                    .name = std.fmt.comptimePrint("{}", .{assign_index}),
                                     .type = resource_parameter_type,
                                     .default_value_ptr = null,
                                     .is_comptime = false,
                                     .alignment = @alignOf(resource_parameter_type),
                                 };
+                                assign_index += 1;
+                            }
                         }
 
                         const resource_parameters_fields = buffer;
@@ -922,7 +925,7 @@ pub const router = struct {
 
                                 const value = document.asAny() catch return ResourceParametersError.BadRequest;
 
-                                field_ptr.data = json.asAny(
+                                field_ptr.data = json.asAnyLeaky(
                                     JsonParser,
                                     Field.type.structure,
                                     &value,

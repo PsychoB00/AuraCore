@@ -1,4 +1,10 @@
+general:
+    - DONT FORGET TO INCR THE VERSIONS
+    - [x] Add versions
+
 documantation:
+    - [x] Add docs generation
+    - [] Create docs for json standard
     - [] Create some docs for establishing some standards (routing, URI, API, time formating, units, etc.)
 
 testing:
@@ -8,25 +14,31 @@ context:
     - [] Add tools Context checking
 
 utils:
-    - [] Add config struct (for passing Allocator, Io, Timezone, env, etc.)
-    - [] Fix namespacing
+    - [x] Add config struct (for passing Allocator, Io, Timezone, env, etc.)
+    - [x] Fix namespacing
 
 log:
-    - [] Put Options as last comptime argument
-    - [] Fix namespacing
+    - [x] Put Options as last comptime argument
+    - [x] Fix namespacing
     - [] Add comptime validation
-    - [] Check if ConsoleLogProcessor rework for zig 0.15.1 is needed
-    - [] Check for formating issues (guard conditions, std namespace reduction)
+    - [x] Check if ConsoleLogProcessor rework for zig 0.15.1 is needed
+    - [x] Check for code formating issues (guard conditions, std namespace reduction)
+    - [x] Fix LogFmt and the bunch of unreachables
+    - [] Add non-comptime scope to Log
+0.0.5:
+    - [] Find MaxLogLength for ConsoleLogProcessor buffer
+    - [x] Pass Environment to Logger and ConsoleLogProcessor
 
 jwt:
-    - [] Fix namespacing
-    - [] Fix long lines
+    - [x] Fix namespacing
+    - [x] Fix long lines
 
 json:
-    - [] Add comments
-    - [] Add enum support
-    - [] Add asserts
-    - [] Make comptime json type validator
+    - [x] Add comments
+    - [x] Add enum support
+    - [x] Add error for InvalidValueFormatting
+    - [x] Add asserts
+    - [x] Make comptime json type validator
 
 routing:
     - [] Add asserts
@@ -45,6 +57,7 @@ routing:
         - [] Change StaticResource data from comptime embeded file to runtime read file
         - [] Fix StaticResource namespacing
         - [] Add proper APIResouce for ResourceTree rework
+        - [] Add default value optionality to QueryParameters
         - [] Add comptime MIME types to BodyParameters
-        - [] Fix comptime validation of BodyParameters
+        - [] Fix comptime validation of BodyParameters and QueryParameters
         - [] Fix APIResource namespacing

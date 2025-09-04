@@ -81,11 +81,10 @@ pub const api_resource = struct {
 
             switch (@typeInfo(field_type)) {
                 .bool, .int, .float => {},
-                .@"enum" => {
-                    const field_enum = @typeInfo(field_type).@"enum";
-                    if (!field_enum.is_exhaustive)
+                .@"enum" => |info| {
+                    if (!info.is_exhaustive)
                         @compileError("Unexhaustive enum field type found");
-                    if (field_enum.decls.len != 0)
+                    if (info.decls.len != 0)
                         @compileError("Enum field type with declarations found");
                 },
                 else => {
@@ -116,6 +115,7 @@ pub const api_resource = struct {
     ///         - extention: .json
     ///         - compatible types:
     ///             - JSON compatible types
+    ///             - []const u8 for enum
     ///             - []const u8 for date and time, formated to ISO 8601
     /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
     ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
@@ -135,6 +135,12 @@ pub const api_resource = struct {
                     },
                     .optional => |info| {
                         _validateType(info.child);
+                    },
+                    .@"enum" => |info| {
+                        if (!info.is_exhaustive)
+                            @compileError("Unexhaustive enum field type found");
+                        if (info.decls.len != 0)
+                            @compileError("Enum field type with declarations found");
                     },
                     .@"struct" => |info| {
                         if (Type == Time)
