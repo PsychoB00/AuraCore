@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const assert = std.debug.assert;
+const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
 
 const Allocator = std.mem.Allocator;
@@ -15,7 +16,7 @@ const indexOfScalarPos = std.mem.indexOfScalarPos;
 pub const log = @This();
 const core = @import("root.zig");
 
-const Enviroment = core.utils.Environment;
+const Enviroment = core.context.Environment;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -91,8 +92,23 @@ pub const LogFmtOptions = struct {
 /// - LogProcessor handles the processing of collected Logs. It must be a type which contains method `init` and methode for
 ///   Log processing `processLog`.
 pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime Options: LoggerOptions) type {
+    // `LogType` validation
+    if (!isLog(LogType))
+        @compileError("`LogType` must be Log");
+
+    // `LogProcessorType` validation
+    if (!isLogProcessor(LogProcessorType))
+        @compileError("`LogProcessorType` must be isLogProcessor");
+
+    // `Options` validation
+    if (Options.log_pool_size == 0)
+        @compileError("`Options.log_pool_size` must be non zero");
+
     return struct {
         const LoggerType = Logger(LogType, LogProcessorType, Options);
+        const log_t = LogType;
+        const log_processor_t = LogProcessorType;
+        const options = Options;
 
         thread_running: atomic(bool),
         thread: ?std.Thread,
@@ -254,17 +270,27 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
     };
 }
 
+pub fn isLogger(comptime Type: type) bool {
+    return @hasDecl(Type, "LoggerType") and @TypeOf(Type.LoggerType) == type and Type.LoggerType == Type and
+        @hasDecl(Type, "log_t") and @TypeOf(Type.log_t) == type and isLog(Type.log_t) and
+        @hasDecl(Type, "log_processor_t") and @TypeOf(Type.log_processor_t) == type and isLogProcessor(Type.log_processor_t) and
+        @hasDecl(Type, "options") and @TypeOf(Type.options) == LoggerOptions and
+        Logger(Type.log_t, Type.log_processor_t, Type.options) == Type;
+}
+
 /// Statically sized Log
 ///
-/// - Log allows construction chaining (except of `printTryFmt`).
+/// - Log allows construction chaining (except of `printTryFmt` and `scopeTryFmt`).
 /// - Must call `commit` to set Log for collecting or `rollback` to set Log for reserving.
-/// - Exceeding `Options.message_len` by length of message formated in `printFmt` will cause panic. Therefore, if you are
-///   unsure about lenght of formated message use `printTryFmt` and `catch` the result. If error is caught when calling `printTryFmt`,
-///   the Log on which it was called IS STILL RESERVED in `log_pool` make sure it's properly commited or rolled-back.
+/// - Exceeding `Options.message_len` or `Options.scope_len` by length of string formated in `printFmt` and `scopeFmt`, respective,
+///   will cause panic. Therefore, if you are unsure about lenght of formated string use try versions of the functions and
+///   `catch` the result. If error is caught when calling respective dunctions, the Log on which it was called on IS STILL RESERVED
+///   in `log_pool` make sure it's properly commited or rolled-back.
 /// - Log can be used by any Logger type which has opaque methode `_incrUncollected`.
 pub fn Log(comptime Options: LogOptions) type {
     return struct {
         const LogType = Log(Options);
+        const options = Options;
 
         state: atomic(State),
         logger: *anyopaque,
@@ -324,6 +350,46 @@ pub fn Log(comptime Options: LogOptions) type {
             self.context = undefined;
             std.mem.copyForwards(u8, &self.context.?, Scope);
             self.context_len = Scope.len;
+            return self;
+        }
+
+        /// Formats a scope and sets it
+        ///
+        /// If formated scope length is over `Options.scope_len`, function will cause panic.
+        pub fn scopeFmt(self: *LogType, comptime Fmt: []const u8, args: anytype) *LogType {
+            comptime if (Options.scope_len < Fmt.len)
+                @compileError(comptimePrint(
+                    "Fmt.len({}) is over Options.scope_len({})",
+                    .{
+                        Fmt.len,
+                        Options.scope_len,
+                    },
+                ));
+
+            self.context = undefined;
+            const slice = std.fmt.bufPrint(&self.context.?, Fmt, args) catch
+                @panic("Length of formated string exceeded `Options.scope_len`");
+            self.context_len = slice.len;
+            return self;
+        }
+
+        /// Formats a scope and sets it
+        ///
+        /// If formated scope length is over `Options.scope_len`, function will return BufPrintError.
+        /// If this function returns an error, the Log is still reserved.
+        pub fn contextTryFmt(self: *LogType, comptime Fmt: []const u8, args: anytype) !*LogType {
+            comptime if (Options.scope_len < Fmt.len)
+                @compileError(comptimePrint(
+                    "Fmt.len({}) is over Options.scope_len({})",
+                    .{
+                        Fmt.len,
+                        Options.scope_len,
+                    },
+                ));
+
+            self.context = undefined;
+            const slice = try std.fmt.bufPrint(&self.context.?, Fmt, args);
+            self.context_len = slice.len;
             return self;
         }
 
@@ -410,8 +476,17 @@ pub fn Log(comptime Options: LogOptions) type {
     };
 }
 
+pub fn isLog(comptime Type: type) bool {
+    return @hasDecl(Type, "LogType") and @TypeOf(Type.LogType) == type and Type.LogType == Type and
+        @hasDecl(Type, "options") and @TypeOf(Type.options) == LogOptions and Log(Type.options) == Type;
+}
+
 /// Formating functions for Log
 pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
+    // `LogType` validation
+    if (!isLog(LogType))
+        @compileError("`LogType` must be Log");
+
     return struct {
         /// Writes `Log.level` to `writer` based on `Options.level_fmt`
         pub fn levelFmt(arg: *const LogType, writer: *std.Io.Writer) !void {
@@ -597,8 +672,13 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
 
 /// LogProcessor for writing out Logs into console
 pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptions) type {
+    // `LogType` validation
+    if (!isLog(LogType))
+        @compileError("`LogType` must be Log");
+
     return struct {
         const LogProcessorType = ConsoleLogProcessor(LogType, Options);
+        const log_t = LogType;
 
         timezone: *const TimeZone,
         buffer: [5_000]u8,
@@ -631,4 +711,10 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
                 @panic("Error occured during console buffer flushing");
         }
     };
+}
+
+pub fn isLogProcessor(comptime Type: type) bool {
+    return @hasDecl(Type, "log_t") and @TypeOf(Type.log_t) == type and isLog(Type.log_t) and
+        hasMethod(Type, "init") and @TypeOf(Type.init) == fn (*Type, *Enviroment) void and
+        hasMethod(Type, "processLog") and @TypeOf(Type.processLog) == fn (*Type, *const Type.log_t) void;
 }

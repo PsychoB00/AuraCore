@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 /// Aura
 const core = @import("root.zig");
 
+const Enviroment = core.context.Environment;
 const ResourceTreeOptions = core.router.ResourceTreeOptions;
 const ResourceTree = core.router.ResourceTree;
 const PathParameters = core.api_resource.PathParameters;
@@ -91,7 +92,7 @@ pub fn main() !void {
     defer std.debug.print("\n\nLeaks detected: {}\n\n", .{gpa.deinit() != .ok});
     const allocator = gpa.allocator();
 
-    var enviroment: core.utils.Environment = undefined;
+    var enviroment: Enviroment = undefined;
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
 

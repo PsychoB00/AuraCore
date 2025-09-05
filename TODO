@@ -11,7 +11,9 @@ testing:
     - [] Add at least some basic testing
 
 context:
-    - [] Add tools Context checking
+    - [x] Add tools for Context checking
+0.0.6:
+    - [x] Move Environment to context.zig
 
 utils:
     - [x] Add config struct (for passing Allocator, Io, Timezone, env, etc.)
@@ -20,13 +22,13 @@ utils:
 log:
     - [x] Put Options as last comptime argument
     - [x] Fix namespacing
-    - [] Add comptime validation
+    - [x] Add comptime validation
     - [x] Check if ConsoleLogProcessor rework for zig 0.15.1 is needed
     - [x] Check for code formating issues (guard conditions, std namespace reduction)
     - [x] Fix LogFmt and the bunch of unreachables
-    - [] Add non-comptime scope to Log
+    - [x] Add non-comptime scope to Log
 0.0.5:
-    - [] Find MaxLogLength for ConsoleLogProcessor buffer
+    - [o] Find MaxLogLength for ConsoleLogProcessor buffer
     - [x] Pass Environment to Logger and ConsoleLogProcessor
 
 jwt:
