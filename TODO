@@ -28,7 +28,7 @@ log:
     - [x] Fix LogFmt and the bunch of unreachables
     - [x] Add non-comptime scope to Log
 0.0.5:
-    - [o] Find MaxLogLength for ConsoleLogProcessor buffer
+    - [x] Find MaxLogLength for ConsoleLogProcessor buffer
     - [x] Pass Environment to Logger and ConsoleLogProcessor
 
 jwt:
@@ -44,7 +44,7 @@ json:
 
 routing:
     - [] Add asserts
-    - [] Fix namespacing
+    - [x] Fix namespacing
     - ResourceTree:
         - [] Rework it to individual resource Options
         - [] Fix comptime validation, too much nesting, try using guard conditions etc.
@@ -55,11 +55,14 @@ routing:
         - [] Add unauthorized function
         - [] Add OnRequestProcessor
         - [] Reduce nesting and fix namespacing
+    - 0.0.7:
+        - [] Fix the bad/unexpresive error handeling
+        - [] Change the passing of allocator in *const Allocator to Allocator
     - resources:
         - [] Change StaticResource data from comptime embeded file to runtime read file
         - [] Fix StaticResource namespacing
-        - [] Add proper APIResouce for ResourceTree rework
-        - [] Add default value optionality to QueryParameters
-        - [] Add comptime MIME types to BodyParameters
-        - [] Fix comptime validation of BodyParameters and QueryParameters
-        - [] Fix APIResource namespacing
+        - [o] Add proper APIResouce for ResourceTree rework
+        - [x] Add default value optionality to QueryParameters
+        - [x] Add comptime MIME types to BodyParameters
+        - [x] Fix comptime validation of BodyParameters and QueryParameters
+        - [x] Fix APIResource namespacing

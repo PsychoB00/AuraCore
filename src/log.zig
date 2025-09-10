@@ -1,20 +1,20 @@
 /// STD
 const std = @import("std");
 
+const Allocator = std.mem.Allocator;
+const atomic = std.atomic.Value;
+const Futex = std.Thread.Futex;
+const SourceLocation = std.builtin.SourceLocation;
+
 const assert = std.debug.assert;
 const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
-
-const Allocator = std.mem.Allocator;
-
-const atomic = std.atomic.Value;
-const Futex = std.Thread.Futex;
-
 const indexOfScalarPos = std.mem.indexOfScalarPos;
+const copyForwards = std.mem.copyForwards;
+const bufPrint = std.fmt.bufPrint;
 
 /// Aura
-pub const log = @This();
-const core = @import("root.zig");
+const core = @import("core.zig");
 
 const Enviroment = core.context.Environment;
 
@@ -105,7 +105,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
         @compileError("`Options.log_pool_size` must be non zero");
 
     return struct {
-        const LoggerType = Logger(LogType, LogProcessorType, Options);
+        const LoggerType = @This();
         const log_t = LogType;
         const log_processor_t = LogProcessorType;
         const options = Options;
@@ -289,7 +289,7 @@ pub fn isLogger(comptime Type: type) bool {
 /// - Log can be used by any Logger type which has opaque methode `_incrUncollected`.
 pub fn Log(comptime Options: LogOptions) type {
     return struct {
-        const LogType = Log(Options);
+        const LogType = @This();
         const options = Options;
 
         state: atomic(State),
@@ -302,7 +302,7 @@ pub fn Log(comptime Options: LogOptions) type {
         context_len: ?usize,
         message: ?[Options.message_len]u8,
         message_len: ?usize,
-        source_location: ?std.builtin.SourceLocation,
+        source_location: ?SourceLocation,
 
         /// Initialize Log
         pub fn init(logger: anytype) LogType {
@@ -348,7 +348,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.context = undefined;
-            std.mem.copyForwards(u8, &self.context.?, Scope);
+            copyForwards(u8, &self.context.?, Scope);
             self.context_len = Scope.len;
             return self;
         }
@@ -367,7 +367,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.context = undefined;
-            const slice = std.fmt.bufPrint(&self.context.?, Fmt, args) catch
+            const slice = bufPrint(&self.context.?, Fmt, args) catch
                 @panic("Length of formated string exceeded `Options.scope_len`");
             self.context_len = slice.len;
             return self;
@@ -388,7 +388,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.context = undefined;
-            const slice = try std.fmt.bufPrint(&self.context.?, Fmt, args);
+            const slice = try bufPrint(&self.context.?, Fmt, args);
             self.context_len = slice.len;
             return self;
         }
@@ -405,7 +405,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.message = undefined;
-            std.mem.copyForwards(u8, &self.message.?, Message);
+            copyForwards(u8, &self.message.?, Message);
             self.message_len = Message.len;
             return self;
         }
@@ -424,7 +424,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.message = undefined;
-            const slice = std.fmt.bufPrint(&self.message.?, Fmt, args) catch
+            const slice = bufPrint(&self.message.?, Fmt, args) catch
                 @panic("Length of formated string exceeded `Options.message_len`");
             self.message_len = slice.len;
             return self;
@@ -445,13 +445,13 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.message = undefined;
-            const slice = try std.fmt.bufPrint(&self.message.?, Fmt, args);
+            const slice = try bufPrint(&self.message.?, Fmt, args);
             self.message_len = slice.len;
             return self;
         }
 
         /// Sets source location
-        pub fn src(self: *LogType, source_location: std.builtin.SourceLocation) *LogType {
+        pub fn src(self: *LogType, source_location: SourceLocation) *LogType {
             self.source_location = source_location;
             return self;
         }
@@ -671,17 +671,42 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
 }
 
 /// LogProcessor for writing out Logs into console
-pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptions) type {
+///
+/// If `BufferLen` is null, the size of the console buffer is approximated.
+pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptions, comptime BufferLen: ?usize) type {
     // `LogType` validation
     if (!isLog(LogType))
         @compileError("`LogType` must be Log");
 
+    // Generated LogProcessor tools
+    const Gen = struct {
+        fn _getApproximatBufferLen() usize {
+            var time_variable_count = 0;
+            for (Options.time_fmt) |character| {
+                if (character == '%')
+                    time_variable_count += 1;
+            }
+
+            var source_location_variable_count = 0;
+            for (Options.source_location_fmt) |character| {
+                if (character == '%')
+                    source_location_variable_count += 1;
+            }
+
+            return (Options.level_fmt.len + 3) +
+                (Options.time_fmt.len + time_variable_count) +
+                (Options.scope_fmt.len + LogType.options.scope_len) +
+                (Options.message_fmt.len + LogType.options.message_len) +
+                (Options.source_location_fmt.len + (source_location_variable_count * 5));
+        }
+    };
+
     return struct {
-        const LogProcessorType = ConsoleLogProcessor(LogType, Options);
+        const LogProcessorType = @This();
         const log_t = LogType;
 
         timezone: *const TimeZone,
-        buffer: [5_000]u8,
+        buffer: [BufferLen orelse Gen._getApproximatBufferLen()]u8,
         out_writer: std.fs.File.Writer,
 
         /// Initialize ConsoleLogProcessor

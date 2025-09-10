@@ -2,12 +2,12 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-/// Aura
-pub const jwt = @This();
-
 /// Thrid Party
 const zap = @import("zap");
-const ext_jwt = @import("jwt");
+const AuthScheme = zap.Auth.AuthScheme;
+const AuthResult = zap.Auth.AuthResult;
+
+const jwt = @import("jwt");
 
 pub const JWTPayload = struct {
     sub: []const u8,
@@ -35,17 +35,17 @@ pub const JWTAuthenticator = struct {
     /// The aura authentication request handler.
     ///
     /// Tries to extract the authentication header and perform the authentication.
-    pub fn authenticateRequest(self: *JWTAuthenticator, r: *const zap.Request) zap.Auth.AuthResult {
+    pub fn authenticateRequest(self: *JWTAuthenticator, r: *const zap.Request) AuthResult {
         r.parseCookies(false);
 
         const auth_cookie = (r.getCookieStr(
             self.allocator,
-            zap.Auth.AuthScheme.Bearer.headerFieldStrFio(),
+            AuthScheme.Bearer.headerFieldStrFio(),
         ) catch return .AuthFailed) orelse return .AuthFailed;
         defer self.allocator.free(auth_cookie);
 
-        const token = auth_cookie[zap.Auth.AuthScheme.Bearer.str().len..];
-        const payload = ext_jwt.validate(
+        const token = auth_cookie[AuthScheme.Bearer.str().len..];
+        const payload = jwt.validate(
             JWTPayload,
             self.allocator,
             .HS256,

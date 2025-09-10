@@ -5,13 +5,10 @@ const Allocator = std.mem.Allocator;
 const EnvMap = std.process.EnvMap;
 
 /// Aura
-pub const context = @This();
-
-const core = @import("root.zig");
+const core = @import("core.zig");
 
 /// Third Party
 const zeit = @import("zeit");
-
 const TimeZone = zeit.TimeZone;
 
 /// General structure for holding common Aura variables

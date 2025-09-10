@@ -5,13 +5,9 @@ const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
 
 /// Aura
-pub const json = @This();
-
-const core = @import("root.zig");
+const core = @import("core.zig");
 
 /// Third Party
-const zimdjson = @import("zimdjson");
-
 const zeit = @import("zeit");
 const Time = zeit.Time;
 
@@ -87,8 +83,8 @@ pub fn validateJsonType(comptime Type: type, comptime AsValue: bool) if (AsValue
 
 /// Parse json AnyValue to a value of `Type`
 ///
-/// Resources allocated by this function aren't tracked, this function should be only used with arena allocator or similar.
-pub fn asAnyLeaky(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: *const Allocator) !Type {
+/// String values and array values allocated by this functions are owned by result, free them accordingly
+pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: *const Allocator) !Type {
     assert(comptime assert_blk: {
         validateJsonType(ParserType, true) catch
             break :assert_blk false;
@@ -126,7 +122,8 @@ pub fn asAnyLeaky(comptime ParserType: type, comptime Type: type, value: *const 
                 if (value.* != .string)
                     return ParserType.Error.IncorrectType;
 
-                return try value.*.string.get();
+                const string_value = try value.*.string.getTemporal();
+                return try allocator.dupe(u8, string_value);
             }
 
             // Array
@@ -141,7 +138,7 @@ pub fn asAnyLeaky(comptime ParserType: type, comptime Type: type, value: *const 
 
             while (try it.next()) |elem| {
                 const elem_value = try elem.asAny();
-                res.appendAssumeCapacity(try asAnyLeaky(
+                res.appendAssumeCapacity(try asAny(
                     ParserType,
                     info.child,
                     &elem_value,
@@ -156,7 +153,7 @@ pub fn asAnyLeaky(comptime ParserType: type, comptime Type: type, value: *const 
             if (value.* == .null)
                 return null;
 
-            return try asAnyLeaky(ParserType, info.child, value, allocator);
+            return try asAny(ParserType, info.child, value, allocator);
         },
         inline .@"enum" => {
             // Enum
@@ -204,7 +201,7 @@ pub fn asAnyLeaky(comptime ParserType: type, comptime Type: type, value: *const 
                         Type,
                         field.name,
                         &res,
-                    ).* = try asAnyLeaky(
+                    ).* = try asAny(
                         ParserType,
                         field.type,
                         &field_value,
