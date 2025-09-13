@@ -46,22 +46,24 @@ routing:
     - [] Add asserts
     - [x] Fix namespacing
     - ResourceTree:
-        - [] Rework it to individual resource Options
-        - [] Fix comptime validation, too much nesting, try using guard conditions etc.
-        - [] Fix namespacing
+        - [x] Rework it to individual resource Options
+        - [x] Fix comptime validation, too much nesting, try using guard conditions etc.
+        - [x] Fix namespacing
     - Router:
-        - [] Rework for ResourceTree rework
+        - [x] Rework for ResourceTree rework
         - [] Fix for StaticResource rework
         - [] Add unauthorized function
         - [] Add OnRequestProcessor
-        - [] Reduce nesting and fix namespacing
+        - [x] Reduce nesting and fix namespacing
     - 0.0.7:
         - [] Fix the bad/unexpresive error handeling
-        - [] Change the passing of allocator in *const Allocator to Allocator
+        - [x] Change the passing of allocator in *const Allocator to Allocator
+    - 0.0.8:
+        - [o] Add RouterContext
     - resources:
         - [] Change StaticResource data from comptime embeded file to runtime read file
         - [] Fix StaticResource namespacing
-        - [o] Add proper APIResouce for ResourceTree rework
+        - [x] Add proper APIResouce for ResourceTree rework
         - [x] Add default value optionality to QueryParameters
         - [x] Add comptime MIME types to BodyParameters
         - [x] Fix comptime validation of BodyParameters and QueryParameters

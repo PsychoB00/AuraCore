@@ -87,14 +87,13 @@ pub fn QueryParameters(comptime Structure: type) type {
 
     return struct {
         const QueryParametersType = @This();
-
         pub const parameters_type: ParametersType = .query;
         pub const structure = Structure;
 
         data: Structure,
 
         /// Parse QueryParameters from `request`
-        pub fn parse(allocator: *const Allocator, request: *const Request, dest: *QueryParametersType) !void {
+        pub fn parse(allocator: Allocator, request: *const Request, dest: *QueryParametersType) !void {
             if (comptime has_endorced_parameters)
                 if (request.query == null)
                     return ParseError.MissingQuery;

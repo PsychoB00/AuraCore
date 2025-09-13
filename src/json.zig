@@ -1,11 +1,17 @@
 /// STD
 const std = @import("std");
+
 const Allocator = std.mem.Allocator;
+
 const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
+const eql = std.mem.eql;
+const stringToEnum = std.meta.stringToEnum;
 
 /// Aura
 const core = @import("core.zig");
+
+const fieldPtr = core.utils.fieldPtr;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -15,69 +21,52 @@ pub const ParseError = error{
     InvalidValueFormatting,
 };
 
-pub const ValidateTypeError = error{
-    NonSlicePointer,
-    InexhaustiveEnum,
-    FoundTuple,
-    UnsupportedType,
-};
-
 /// Validates `Type` against AuraStandard
-///
-/// - If is `AsValue` true, function returns error as ValidateTypeError, else compile error is thrown
-pub fn validateJsonType(comptime Type: type, comptime AsValue: bool) if (AsValue) ValidateTypeError!void else void {
+pub fn validateJsonType(comptime Type: type) void {
     switch (@typeInfo(Type)) {
         .bool, .int, .float => {},
         .pointer => |info| {
             // For string, []const u8 is a slice and u8 is valid json type
             if (info.size != .slice)
-                if (AsValue)
-                    return ValidateTypeError.NonSlicePointer
-                else
-                    @compileError(comptimePrint(
-                        "Non-slice pointer found as {}",
-                        .{Type},
-                    ));
+                @compileError(comptimePrint(
+                    "Non-slice pointer found as {}",
+                    .{Type},
+                ));
 
-            return validateJsonType(info.child, AsValue);
+            return validateJsonType(info.child);
         },
-        .optional => |info| return validateJsonType(info.child, AsValue),
+        .optional => |info| return validateJsonType(info.child),
         .@"enum" => |info| {
             if (!info.is_exhaustive)
-                if (AsValue)
-                    return ValidateTypeError.InexhaustiveEnum
-                else
-                    @compileError(comptimePrint(
-                        "Inexhaustive enum found as {}",
-                        .{Type},
-                    ));
+                @compileError(comptimePrint(
+                    "Inexhaustive enum found as {}",
+                    .{Type},
+                ));
         },
         .@"struct" => |info| {
             if (Type == Time)
                 return;
 
             if (info.is_tuple)
-                if (AsValue)
-                    return ValidateTypeError.FoundTuple
-                else
-                    @compileError(comptimePrint(
-                        "Tuple found as {}",
-                        .{Type},
-                    ));
-
-            for (info.fields) |field| {
-                return validateJsonType(field.type, AsValue);
-            }
-        },
-        else => {
-            if (AsValue)
-                return ValidateTypeError.UnsupportedType
-            else
                 @compileError(comptimePrint(
-                    "Unsupported type found as {}",
+                    "Tuple found as {}",
                     .{Type},
                 ));
+
+            if (info.decls.len > 0)
+                @compileError(comptimePrint(
+                    "Structure with declaretions found as {}",
+                    .{Type},
+                ));
+
+            for (info.fields) |field| {
+                return validateJsonType(field.type);
+            }
         },
+        else => @compileError(comptimePrint(
+            "Unsupported type found as {}",
+            .{Type},
+        )),
     }
 }
 
@@ -85,11 +74,7 @@ pub fn validateJsonType(comptime Type: type, comptime AsValue: bool) if (AsValue
 ///
 /// String values and array values allocated by this functions are owned by result, free them accordingly
 pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: *const Allocator) !Type {
-    assert(comptime assert_blk: {
-        validateJsonType(ParserType, true) catch
-            break :assert_blk false;
-        break :assert_blk true;
-    });
+    validateJsonType(ParserType);
 
     switch (@typeInfo(Type)) {
         inline .bool => {
@@ -161,7 +146,7 @@ pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const Parse
                 return ParserType.Error.IncorrectType;
 
             const enum_value = try value.*.string.getTemporal();
-            return std.meta.stringToEnum(Type, enum_value) orelse
+            return stringToEnum(Type, enum_value) orelse
                 return ParseError.InvalidValueFormatting;
         },
         inline .@"struct" => |info| {
@@ -190,14 +175,14 @@ pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const Parse
                 var field_found = false;
 
                 inline for (info.fields, 0..) |field, index| field_loop: {
-                    if (!std.mem.eql(u8, field_name, field.name))
+                    if (!eql(u8, field_name, field.name))
                         break :field_loop;
 
                     field_found = true;
                     field_check_array[index] = true;
                     const field_value = try json_field.value.asAny();
 
-                    core.utils.fieldPtr(
+                    fieldPtr(
                         Type,
                         field.name,
                         &res,
@@ -221,13 +206,13 @@ pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const Parse
                 if (comptime field.default_value_ptr == null) {
                     if (comptime @typeInfo(field.type) == .optional) {
                         // Default for optionals is null
-                        core.utils.fieldPtr(Type, field.name, &res).* = null;
+                        fieldPtr(Type, field.name, &res).* = null;
                         break :check_loop;
                     }
                     return ParserType.Error.IncompleteObject;
                 }
 
-                core.utils.fieldPtr(Type, field.name, &res).* = field.defaultValue().?;
+                fieldPtr(Type, field.name, &res).* = field.defaultValue().?;
             }
 
             return res;

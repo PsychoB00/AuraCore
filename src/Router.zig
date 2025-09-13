@@ -39,6 +39,13 @@ pub const ResourceTreeOptions = struct {
     error_strategy: ErrorStrategy = .log_to_console,
 };
 
+pub const ResourceOptions = struct {
+    /// Should endpoint requests for resources in this resource be authenticated by Router
+    authenticate: bool,
+    /// How should zap handle endpoint request error
+    error_strategy: ErrorStrategy = .log_to_console,
+};
+
 /// Struct for binding `Options` to `Controller`
 ///
 /// - For ResourceTree with `Options.resource_type` == `static`

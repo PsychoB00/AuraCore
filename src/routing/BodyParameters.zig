@@ -64,7 +64,7 @@ pub fn BodyParameters(comptime Structure: type, comptime SupportedMIMETypes: any
             switch (Type) {
                 .text => return structure_type == []const u8,
                 .json => {
-                    json.validateJsonType(structure_type, true) catch return false;
+                    json.validateJsonType(structure_type);
                     return true;
                 },
             }
@@ -116,7 +116,6 @@ pub fn BodyParameters(comptime Structure: type, comptime SupportedMIMETypes: any
 
     return struct {
         const BodyParametersType = @This();
-
         pub const parameters_type: ParametersType = .body;
         pub const structure = Structure;
         pub const supported_mime_types = SupportedMIMETypes;
@@ -124,7 +123,7 @@ pub fn BodyParameters(comptime Structure: type, comptime SupportedMIMETypes: any
         data: Structure,
 
         /// Parse BodyParameters from `request`
-        pub fn parse(allocator: *const Allocator, request: *const Request, dest: *BodyParametersType) !void {
+        pub fn parse(allocator: Allocator, request: *const Request, dest: *BodyParametersType) !void {
             if (request.body == null) {
                 if (comptime @typeInfo(Structure) == .optional) {
                     dest.data = null;
@@ -151,9 +150,9 @@ pub fn BodyParameters(comptime Structure: type, comptime SupportedMIMETypes: any
                             break :inline_loop;
 
                         var parser = JsonParser.init;
-                        defer parser.deinit(allocator.*);
+                        defer parser.deinit(allocator);
 
-                        const document: JsonParser.Document = try parser.parseFromSlice(allocator.*, request.body.?);
+                        const document: JsonParser.Document = try parser.parseFromSlice(allocator, request.body.?);
                         const document_value = try document.asAny();
 
                         dest.data = try json.asAny(JsonParser, Structure, &document_value, allocator);

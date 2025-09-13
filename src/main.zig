@@ -7,8 +7,8 @@ const core = @import("core.zig");
 
 const Enviroment = core.context.Environment;
 
-const ResourceTreeOptions = core.router.ResourceTreeOptions;
-const ResourceTree = core.router.ResourceTree;
+const ResourceOptions = core.routing.ResourceOptions;
+const APIResource = core.routing.APIResource;
 
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
@@ -48,48 +48,31 @@ const ItemModel = struct {
     color: ?Color,
 };
 
-const OOOPS = error{OPPPS};
-
 const html = "<!DOCTYPE html><html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>";
 
-const APIController = struct {
+const ResourceTree = struct {
     pub const api = struct {
-        pub const items = struct {
-            pub fn get(
-                context: *Context,
-                request: *const Request,
-                query_params: *const PathParameters(struct {
-                    items: u64,
-                    sub_items: ?u64,
-                }),
-            ) !StatusCode {
-                context.logger.log(.info).time().scopeFmt("GET @ {s}", .{request.path.?}).printFmt("{} {?}\n", .{ query_params.data.items, query_params.data.sub_items }).commit();
-                return .ok;
-            }
-        };
+        pub const items = APIResource(
+            struct {
+                pub fn get(
+                    context: *Context,
+                    request: *const Request,
+                    query_params: *const PathParameters(struct {
+                        items: u64,
+                        sub_items: ?u64,
+                    }),
+                ) !StatusCode {
+                    context.logger.log(.info).time().scopeFmt("GET @ {s}", .{request.path.?}).printFmt("{} {?}\n", .{ query_params.data.items, query_params.data.sub_items }).commit();
+                    return .ok;
+                }
+            },
+            .{ .authenticate = false },
+        );
     };
 };
-const IndexController = struct {
-    pub const index = core.static_resource.StaticResource(.html, html);
-};
 
-const Router = core.router.Router(
-    .{
-        ResourceTree(
-            IndexController,
-            ResourceTreeOptions{
-                .resource_type = .static,
-                .authenticated = false,
-            },
-        ),
-        ResourceTree(
-            APIController,
-            ResourceTreeOptions{
-                .resource_type = .api,
-                .authenticated = false,
-            },
-        ),
-    },
+const Router = core.routing.Router(
+    ResourceTree,
     Context,
     core.jwt.JWTAuthenticator,
 );

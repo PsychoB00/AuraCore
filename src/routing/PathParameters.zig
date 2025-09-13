@@ -76,13 +76,12 @@ pub fn PathParameters(comptime Structure: type) type {
 
     return struct {
         const PathParametersType = @This();
-
         pub const parameters_type: ParametersType = .path;
         pub const structure = Structure;
 
         data: Structure,
 
-        pub fn parse(comptime StaticPathLenght: usize, allocator: *const Allocator, request: *const Request, dest: *PathParametersType) !void {
+        pub fn parse(comptime StaticPathLenght: usize, allocator: Allocator, request: *const Request, dest: *PathParametersType) !void {
             if (request.path == null)
                 return ParseError.MissingPath;
 
@@ -180,5 +179,5 @@ pub fn PathParameters(comptime Structure: type) type {
 
 pub fn isPathParameters(comptime Type: type) bool {
     return isResourceParameters(Type) and Type.parameters_type == .path and
-        PathParameters(Type.structure);
+        PathParameters(Type.structure) == Type;
 }

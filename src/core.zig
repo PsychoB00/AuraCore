@@ -16,10 +16,16 @@ pub const log = @import("log.zig");
 pub const jwt = @import("jwt.zig");
 
 pub const routing = struct {
+    const router = @import("routing/Router.zig");
+    pub const ResourceOptions = router.ResourceOptions;
+    pub const Router = router.Router;
+
     const api_resource = @import("routing/APIResource.zig");
     pub const ParametersType = api_resource.ParametersType;
     pub const ResourceParametersError = api_resource.ResourceParametersError;
     pub const isResourceParameters = api_resource.isResourceParameters;
+    pub const APIResource = api_resource.APIResource;
+    pub const isAPIResource = api_resource.isAPIResource;
 
     const path_parameters = @import("routing/PathParameters.zig");
     pub const PathParameters = path_parameters.PathParameters;
@@ -34,5 +40,4 @@ pub const routing = struct {
     pub const BodyParameters = body_parameters.BodyParameters;
     pub const isBodyParameters = body_parameters.isBodyParameters;
 };
-pub const router = @import("Router.zig");
 pub const static_resource = @import("StaticResource.zig").static_resource;
