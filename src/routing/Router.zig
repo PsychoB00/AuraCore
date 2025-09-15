@@ -14,7 +14,7 @@ const StaticRoute = static_route.StaticRoute;
 const AuthStaticRoute = static_route.AuthStaticRoute;
 
 const fieldPtr = core.utils.fieldPtr;
-const isStaticResource = core.static_resource.isStaticResource;
+const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 
 /// Third Party
@@ -133,22 +133,30 @@ pub fn Router(comptime ResourceTree: anytype, comptime ContextType: type, compti
                 const decl_value = @field(Node, decl.name);
                 const decl_path = Path ++ "/" ++ decl.name;
 
-                if (isStaticResource(decl_value) or isAPIResource(decl_value)) {
+                const is_static_resource = isStaticResource(decl_value);
+                const is_api_resource = isAPIResource(decl_value);
+                if (is_static_resource or is_api_resource) {
                     const options = decl_value.options;
+                    const resource_path =
+                        if (is_static_resource)
+                            decl_path ++ decl_value.file_extention
+                        else
+                            decl_path;
+
                     const static_route_type =
                         if (options.authenticate)
                             AuthStaticRoute(
                                 decl_value,
                                 ContextType,
                                 AuthenticatorType,
-                                decl_path,
+                                resource_path,
                                 options,
                             )
                         else
                             StaticRoute(
                                 decl_value,
                                 ContextType,
-                                decl_path,
+                                resource_path,
                                 options,
                             );
 

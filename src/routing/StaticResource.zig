@@ -1,0 +1,51 @@
+/// STD
+const std = @import("std");
+
+const lastIndexOfScalar = std.mem.lastIndexOfScalar;
+
+/// Aura
+const core = @import("../core.zig");
+
+const ContentDisposition = core.net.ContentDisposition;
+const CacheControl = core.net.CacheControl;
+
+const ResourceOptions = core.routing.ResourceOptions;
+
+pub const StaticResourceOptions = struct {
+    /// How many bytes can file be, before considiring it to large
+    max_bytes: usize = 65_536,
+    /// Should the resource be displayed by browsers or downloaded
+    content_disposition: ContentDisposition = .@"inline",
+    /// How should resource be cached
+    cache_control: CacheControl = .no_store,
+    /// Should the "last-modified" header be set
+    last_modified: bool = false,
+};
+
+pub fn StaticResource(comptime FilePath: []const u8, comptime SROptions: StaticResourceOptions, comptime Options: ResourceOptions) type {
+    // `FilePath` correctness assertion
+    const file_extention_start_index = lastIndexOfScalar(u8, FilePath, '.') orelse
+        @compileError("`FilePath` must end with file extention");
+    if (file_extention_start_index == FilePath.len - 1)
+        @compileError("`FilePath` must end with non-empty file extention");
+
+    for (FilePath[(file_extention_start_index + 1)..]) |character| {
+        if (character < 'a' or character > 'z')
+            @compileError("File extention containes unsupported characters");
+    }
+
+    return struct {
+        pub const file_path = FilePath;
+        pub const file_extention: []const u8 = FilePath[file_extention_start_index..];
+        pub const sr_options = SROptions;
+        pub const options = Options;
+    };
+}
+
+pub fn isStaticResource(comptime Type: type) bool {
+    return @hasDecl(Type, "file_path") and @TypeOf(Type.file_path) == []const u8 and
+        @hasDecl(Type, "file_extention") and @TypeOf(Type.file_extention) == []const u8 and
+        @hasDecl(Type, "sr_options") and @TypeOf(Type.sr_options) == StaticResourceOptions and
+        @hasDecl(Type, "options") and @TypeOf(Type.options) == ResourceOptions and
+        StaticResource(Type.file_path, Type.sr_options, Type.options) == Type;
+}

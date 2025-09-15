@@ -5,15 +5,21 @@ const Allocator = std.mem.Allocator;
 const StructField = std.builtin.Type.StructField;
 
 const hasFn = std.meta.hasFn;
+const cwd = std.fs.cwd;
+const bufPrint = std.fmt.bufPrint;
 
 /// Aura
 const core = @import("../core.zig");
+
+const ContentDisposition = core.net.ContentDisposition;
+const CacheControl = core.net.CacheControl;
+const LastModified = core.net.LastModified;
 
 const ResourceOptions = core.routing.ResourceOptions;
 const ResourceParametersError = core.routing.ResourceParametersError;
 
 const fieldPtr = core.utils.fieldPtr;
-const isStaticResource = core.static_resource.isStaticResource;
+const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 const isResourceParameters = core.routing.isResourceParameters;
 
@@ -126,9 +132,7 @@ pub fn StaticRoute(
         /// GET method called by zap
         pub fn get(_: *@This(), allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => {
-                    unreachable;
-                },
+                inline .static => try _sendStaticResource(allocator, &request),
                 inline .api => try _callAPIMethod("get", allocator, context, &request),
             }
         }
@@ -179,6 +183,36 @@ pub fn StaticRoute(
                 inline .static => request.setStatus(.method_not_allowed),
                 inline .api => try _callAPIMethod("head", allocator, context, &request),
             }
+        }
+
+        /// Sends StaticResource and sets appropriate headers
+        fn _sendStaticResource(allocator: Allocator, request: *const Request) !void {
+            if (request.path == null or request.path.?.len != Path.len) {
+                request.setStatus(.not_found);
+                return;
+            }
+
+            const body = try cwd().readFileAlloc(
+                allocator,
+                ResourceType.file_path,
+                ResourceType.sr_options.max_bytes,
+            );
+            defer allocator.free(body);
+            var content_length_buffer: [20]u8 = undefined;
+            const content_length = try bufPrint(&content_length_buffer, "{}", .{body.len});
+
+            try request.setContentTypeFromFilename(ResourceType.file_path);
+            try request.setHeader("content-length", content_length);
+            try request.setHeader("content-disposition", ContentDisposition.toString(ResourceType.sr_options.content_disposition));
+            try request.setHeader("cache-control", CacheControl.toString(ResourceType.sr_options.cache_control));
+            if (ResourceType.sr_options.last_modified) {
+                const stat = try cwd().statFile(ResourceType.file_path);
+                var buffer: [29]u8 = undefined;
+                try LastModified.toString(stat, &buffer);
+                try request.setHeader("last-modified", &buffer);
+            }
+
+            try request.sendBody(body);
         }
 
         /// Calls API Method

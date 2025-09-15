@@ -48,7 +48,7 @@ pub const LogOptions = struct {
     /// How long can Log scope string be?
     scope_len: usize = 64,
     /// When formated, how long can a Log message string be?
-    message_len: usize = 1024,
+    message_len: usize = 1_024,
 };
 
 pub const LogFmtOptions = struct {

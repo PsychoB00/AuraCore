@@ -20,6 +20,11 @@ pub const routing = struct {
     pub const ResourceOptions = router.ResourceOptions;
     pub const Router = router.Router;
 
+    const static_resource = @import("routing/StaticResource.zig");
+    pub const StaticResourceOptions = static_resource.StaticResourceOptions;
+    pub const StaticResource = static_resource.StaticResource;
+    pub const isStaticResource = static_resource.isStaticResource;
+
     const api_resource = @import("routing/APIResource.zig");
     pub const ParametersType = api_resource.ParametersType;
     pub const ResourceParametersError = api_resource.ResourceParametersError;
@@ -40,4 +45,10 @@ pub const routing = struct {
     pub const BodyParameters = body_parameters.BodyParameters;
     pub const isBodyParameters = body_parameters.isBodyParameters;
 };
-pub const static_resource = @import("StaticResource.zig").static_resource;
+
+pub const net = struct {
+    const headers = @import("net/headers.zig");
+    pub const CacheControl = headers.CacheControl;
+    pub const ContentDisposition = headers.ContentDisposition;
+    pub const LastModified = headers.LastModified;
+};

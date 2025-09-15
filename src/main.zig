@@ -7,7 +7,11 @@ const core = @import("core.zig");
 
 const Enviroment = core.context.Environment;
 
+const RouterType = core.routing.Router;
+const JWTAuthenticator = core.jwt.JWTAuthenticator;
+
 const ResourceOptions = core.routing.ResourceOptions;
+const StaticResource = core.routing.StaticResource;
 const APIResource = core.routing.APIResource;
 
 const PathParameters = core.routing.PathParameters;
@@ -48,9 +52,21 @@ const ItemModel = struct {
     color: ?Color,
 };
 
-const html = "<!DOCTYPE html><html><head><title>Hello World</title></head><body><h1>Hello World!</h1></body></html>";
-
 const ResourceTree = struct {
+    pub const pages = struct {
+        pub const hello_world = StaticResource(
+            "zig-out/resources/hello_world.html",
+            .{},
+            .{ .authenticate = false },
+        );
+    };
+    pub const img = struct {
+        pub const dome = StaticResource(
+            "zig-out/resources/aura_dome.svg",
+            .{},
+            .{ .authenticate = false },
+        );
+    };
     pub const api = struct {
         pub const items = APIResource(
             struct {
@@ -71,11 +87,7 @@ const ResourceTree = struct {
     };
 };
 
-const Router = core.routing.Router(
-    ResourceTree,
-    Context,
-    core.jwt.JWTAuthenticator,
-);
+const Router = RouterType(ResourceTree, Context, JWTAuthenticator);
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{

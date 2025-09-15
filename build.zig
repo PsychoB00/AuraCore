@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     options.addOption(std.SemanticVersion, "core_version", getVersion());
 
+    // Dependencies
     const zeit = b.dependency("zeit", .{
         .target = target,
         .optimize = optimize,
@@ -28,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Core
     const core = b.addModule("core", .{
         .root_source_file = .{
             .src_path = .{
@@ -46,6 +48,7 @@ pub fn build(b: *std.Build) void {
     });
     core.addOptions("core_options", options);
 
+    // Test exe
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -72,7 +75,17 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the TestExe");
     run_step.dependOn(&run_cmd.step);
 
+    // Copy resources
+    const install_resources = b.addInstallDirectory(.{
+        .source_dir = b.path("resources"),
+        .install_dir = std.Build.InstallDir.prefix,
+        .install_subdir = "resources",
+    });
+
+    b.getInstallStep().dependOn(&install_resources.step);
+
     if (std.mem.eql(u8, "", b.pkg_hash)) {
+        // Docs
         const docs = b.addObject(.{
             .name = "core",
             .root_module = core,
