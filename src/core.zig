@@ -16,6 +16,10 @@ pub const log = @import("log.zig");
 pub const jwt = @import("jwt.zig");
 
 pub const routing = struct {
+    const route_processor = @import("routing/RouteProcessor.zig");
+    pub const LoggingRouteProcessor = route_processor.LoggingRouteProcessor;
+    pub const isRouteProcessor = route_processor.isRouteProcessor;
+
     const router = @import("routing/Router.zig");
     pub const ResourceOptions = router.ResourceOptions;
     pub const Router = router.Router;
@@ -27,7 +31,6 @@ pub const routing = struct {
 
     const api_resource = @import("routing/APIResource.zig");
     pub const ParametersType = api_resource.ParametersType;
-    pub const ResourceParametersError = api_resource.ResourceParametersError;
     pub const isResourceParameters = api_resource.isResourceParameters;
     pub const APIResource = api_resource.APIResource;
     pub const isAPIResource = api_resource.isAPIResource;
@@ -51,4 +54,12 @@ pub const net = struct {
     pub const CacheControl = headers.CacheControl;
     pub const ContentDisposition = headers.ContentDisposition;
     pub const LastModified = headers.LastModified;
+
+    const method = @import("net/method.zig");
+    pub const methodToLower = method.methodToLower;
+    pub const methodToUpper = method.methodToUpper;
+
+    const status_code = @import("net/status_code.zig");
+    pub const statusCodeToLower = status_code.statusCodeToLower;
+    pub const statusCodeToUpper = status_code.statusCodeToUpper;
 };

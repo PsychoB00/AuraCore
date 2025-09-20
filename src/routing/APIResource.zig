@@ -25,11 +25,14 @@ pub const ParametersType = enum {
     path,
     query,
     body,
-};
 
-pub const ResourceParametersError = error{
-    NotFound,
-    BadRequest,
+    pub fn toString(comptime Type: ParametersType) []const u8 {
+        switch (Type) {
+            .path => return "Path",
+            .query => return "Query",
+            .body => return "Body",
+        }
+    }
 };
 
 pub fn isResourceParameters(comptime Type: type) bool {
@@ -38,7 +41,7 @@ pub fn isResourceParameters(comptime Type: type) bool {
         @hasField(Type, "data") and @FieldType(Type, "data") == Type.structure;
 }
 
-/// Structure for binding `Controller` and `Options` together
+/// Structure for binding `Controller` and `Options` together to define REST API resource
 ///
 /// - `Controller` must be a struct type with at least one http method.
 /// - Every function can have one parameter typed:

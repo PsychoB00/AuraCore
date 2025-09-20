@@ -9,6 +9,7 @@ const Enviroment = core.context.Environment;
 
 const RouterType = core.routing.Router;
 const JWTAuthenticator = core.jwt.JWTAuthenticator;
+const LoggingRouteProcessor = core.routing.LoggingRouteProcessor;
 
 const ResourceOptions = core.routing.ResourceOptions;
 const StaticResource = core.routing.StaticResource;
@@ -63,7 +64,9 @@ const ResourceTree = struct {
     pub const img = struct {
         pub const dome = StaticResource(
             "zig-out/resources/aura_dome.svg",
-            .{},
+            .{
+                .last_modified = true,
+            },
             .{ .authenticate = false },
         );
     };
@@ -71,14 +74,12 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    context: *Context,
-                    request: *const Request,
-                    query_params: *const PathParameters(struct {
+                    path_params: *const PathParameters(struct {
                         items: u64,
                         sub_items: ?u64,
                     }),
                 ) !StatusCode {
-                    context.logger.log(.info).time().scopeFmt("GET @ {s}", .{request.path.?}).printFmt("{} {?}\n", .{ query_params.data.items, query_params.data.sub_items }).commit();
+                    _ = path_params;
                     return .ok;
                 }
             },
@@ -87,7 +88,12 @@ const ResourceTree = struct {
     };
 };
 
-const Router = RouterType(ResourceTree, Context, JWTAuthenticator);
+const Router = RouterType(
+    ResourceTree,
+    Context,
+    JWTAuthenticator,
+    LoggingRouteProcessor(Context),
+);
 
 pub fn main() !void {
     var gpa: std.heap.GeneralPurposeAllocator(.{

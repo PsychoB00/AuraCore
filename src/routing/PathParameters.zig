@@ -3,7 +3,9 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 
+const comptimePrint = std.fmt.comptimePrint;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
+const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 const eql = std.mem.eql;
 const parseInt = std.fmt.parseInt;
 
@@ -81,11 +83,35 @@ pub fn PathParameters(comptime Structure: type) type {
 
         data: Structure,
 
-        pub fn parse(comptime StaticPathLenght: usize, allocator: Allocator, request: *const Request, dest: *PathParametersType) !void {
+        pub fn parse(comptime StaticPath: []const u8, allocator: Allocator, request: *const Request, dest: *PathParametersType) !void {
+            // `StaticPath` correctness assertion
+            comptime {
+                if (StaticPath.len == 0)
+                    @compileError("`StaticPath.len` musn't be zero");
+                if (StaticPath[StaticPath.len - 1] == '/')
+                    @compileError("`StaticPath` musn't end with '/'");
+                if (StaticPath.len < structure_info.@"struct".fields[0].name.len)
+                    @compileError("`StaticPath.len` is less then the name length of the first parameter");
+
+                if (lastIndexOfScalar(u8, StaticPath, '/')) |static_parameter_start_index| {
+                    if (!eql(u8, StaticPath[(static_parameter_start_index + 1)..], structure_info.@"struct".fields[0].name))
+                        @compileError(comptimePrint(
+                            "Static parameter name ({s}) doesn't match the name of the first parameter ({s})",
+                            .{ StaticPath[(static_parameter_start_index + 1)..], structure_info.@"struct".fields[0].name },
+                        ));
+                } else {
+                    if (!eql(u8, StaticPath, structure_info.@"struct".fields[0].name))
+                        @compileError(comptimePrint(
+                            "Static parameter name ({s}) doesn't match the name of the first parameter ({s})",
+                            .{ StaticPath, structure_info.@"struct".fields[0].name },
+                        ));
+                }
+            }
+
             if (request.path == null)
                 return ParseError.MissingPath;
 
-            var parameter_start_index = StaticPathLenght - structure_info.@"struct".fields[0].name.len;
+            var parameter_start_index = StaticPath.len - structure_info.@"struct".fields[0].name.len;
             var parsed_params_count: usize = 0;
             const next_param_count =
                 blk: {

@@ -14,6 +14,7 @@ const StaticRoute = static_route.StaticRoute;
 const AuthStaticRoute = static_route.AuthStaticRoute;
 
 const fieldPtr = core.utils.fieldPtr;
+const isRouteProcessor = core.routing.isRouteProcessor;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 
@@ -32,7 +33,12 @@ pub const ResourceOptions = struct {
 /// Router which constructs, authenticates and routes to `ResourceTree`
 ///
 /// - `ResourceTree` must be a struct ...
-pub fn Router(comptime ResourceTree: anytype, comptime ContextType: type, comptime AuthenticatorType: type) type {
+pub fn Router(
+    comptime ResourceTree: type,
+    comptime ContextType: type,
+    comptime AuthenticatorType: type,
+    comptime RouteProcessorType: type,
+) type {
     // Generated Router tools
     const Gen = struct {
         const App = zap.App.Create(ContextType);
@@ -149,6 +155,7 @@ pub fn Router(comptime ResourceTree: anytype, comptime ContextType: type, compti
                                 decl_value,
                                 ContextType,
                                 AuthenticatorType,
+                                RouteProcessorType,
                                 resource_path,
                                 options,
                             )
@@ -156,6 +163,7 @@ pub fn Router(comptime ResourceTree: anytype, comptime ContextType: type, compti
                             StaticRoute(
                                 decl_value,
                                 ContextType,
+                                RouteProcessorType,
                                 resource_path,
                                 options,
                             );
@@ -173,6 +181,12 @@ pub fn Router(comptime ResourceTree: anytype, comptime ContextType: type, compti
             }
         }
     };
+
+    // `RouteProcessorType` correctness assertion
+    if (!isRouteProcessor(RouteProcessorType))
+        @compileError("`RouteProcessorType` must be RouteProcessor");
+    if (RouteProcessorType.context_t != ContextType)
+        @compileError("Context of `RouteProcessorType` isn't same as `ContextType`");
 
     // `ResourceTree` correctness assertion
     Gen._validateNode(ResourceTree);

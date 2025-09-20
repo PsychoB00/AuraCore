@@ -57,7 +57,7 @@ pub fn getLogger(comptime LoggerType: type, context_ptr: anytype) *LoggerType {
     comptime if (info != .pointer)
         @compileError("`context_ptr` must be a pointer");
     const context_type = info.pointer.child;
-    comptime if (isContext(context_type))
+    comptime if (!isContext(context_type))
         @compileError("`context_ptr` must point to non-tuple struct");
 
     inline for (@typeInfo(context_type).@"struct".fields) |field| {

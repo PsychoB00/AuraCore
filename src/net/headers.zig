@@ -5,6 +5,7 @@ const Stat = std.fs.File.Stat;
 const Writer = std.Io.Writer;
 
 const comptimePrint = std.fmt.comptimePrint;
+const assert = std.debug.assert;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -125,7 +126,10 @@ const CacheControlTag = enum {
 };
 
 pub const LastModified = struct {
+    /// Length of `dest` must be 29 bytes or longer
     pub fn toString(stat: Stat, dest: []u8) !void {
+        assert(dest.len >= 29);
+
         const instant = try zeit.instant(.{ .source = .{ .unix_nano = stat.mtime } });
         var writer = Writer.fixed(dest);
 

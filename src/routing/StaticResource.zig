@@ -12,7 +12,7 @@ const CacheControl = core.net.CacheControl;
 const ResourceOptions = core.routing.ResourceOptions;
 
 pub const StaticResourceOptions = struct {
-    /// How many bytes can file be, before considiring it to large
+    /// How many bytes can file be
     max_bytes: usize = 65_536,
     /// Should the resource be displayed by browsers or downloaded
     content_disposition: ContentDisposition = .@"inline",
@@ -22,6 +22,10 @@ pub const StaticResourceOptions = struct {
     last_modified: bool = false,
 };
 
+/// Structure for binding `FilePath`, `SROptions` and `Options` together to define Static file resource
+///
+/// `FilePath` must be valid file path relative to current working directory and end with extention
+/// `SROptions` are options for both file reading and responce building
 pub fn StaticResource(comptime FilePath: []const u8, comptime SROptions: StaticResourceOptions, comptime Options: ResourceOptions) type {
     // `FilePath` correctness assertion
     const file_extention_start_index = lastIndexOfScalar(u8, FilePath, '.') orelse

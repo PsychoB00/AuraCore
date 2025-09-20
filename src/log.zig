@@ -60,7 +60,7 @@ pub const LogFmtOptions = struct {
     /// - '%c' and '%C' is `scope`, empty argument is "<NO_SCOPE>"
     /// - '%m' and '%M' is `message`, empty argument is "<NO_MESSAGE>"
     /// - '%s' and '%S' is `source_location`, empty argument is "<NO_SOURCE>"
-    fmt: []const u8 = "%L%t%c%m%s",
+    fmt: []const u8 = "%L%t%c%m%s\n",
     /// If formated, what format should the `level` be in?
     /// - '%l' is `level` in lower case, like "debug"
     /// - '%L' is `level` in upper case, like "DEBUG"
@@ -377,7 +377,7 @@ pub fn Log(comptime Options: LogOptions) type {
         ///
         /// If formated scope length is over `Options.scope_len`, function will return BufPrintError.
         /// If this function returns an error, the Log is still reserved.
-        pub fn contextTryFmt(self: *LogType, comptime Fmt: []const u8, args: anytype) !*LogType {
+        pub fn scopeTryFmt(self: *LogType, comptime Fmt: []const u8, args: anytype) !*LogType {
             comptime if (Options.scope_len < Fmt.len)
                 @compileError(comptimePrint(
                     "Fmt.len({}) is over Options.scope_len({})",
