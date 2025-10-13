@@ -106,9 +106,9 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
 
     return struct {
         const LoggerType = @This();
-        const log_t = LogType;
-        const log_processor_t = LogProcessorType;
-        const options = Options;
+        pub const log_t = LogType;
+        pub const log_processor_t = LogProcessorType;
+        pub const options = Options;
 
         thread_running: atomic(bool),
         thread: ?std.Thread,
@@ -290,7 +290,7 @@ pub fn isLogger(comptime Type: type) bool {
 pub fn Log(comptime Options: LogOptions) type {
     return struct {
         const LogType = @This();
-        const options = Options;
+        pub const options = Options;
 
         state: atomic(State),
         logger: *anyopaque,
@@ -703,7 +703,7 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
 
     return struct {
         const LogProcessorType = @This();
-        const log_t = LogType;
+        pub const log_t = LogType;
 
         timezone: *const TimeZone,
         buffer: [BufferLen orelse Gen._getApproximatBufferLen()]u8,

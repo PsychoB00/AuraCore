@@ -9,7 +9,7 @@ const Enviroment = core.context.Environment;
 
 const RouterType = core.routing.Router;
 const JWTAuthenticator = core.jwt.JWTAuthenticator;
-const LoggingRouteProcessor = core.routing.LoggingRouteProcessor;
+const LoggingOnRequestProcessor = core.routing.LoggingOnRequestProcessor;
 
 const ResourceOptions = core.routing.ResourceOptions;
 const StaticResource = core.routing.StaticResource;
@@ -22,7 +22,6 @@ const MIMEType = core.routing.MIMEType;
 
 /// Third Party
 const zap = @import("zap");
-const Request = zap.Request;
 const StatusCode = zap.http.StatusCode;
 
 const zeit = @import("zeit");
@@ -80,7 +79,7 @@ const ResourceTree = struct {
                     }),
                 ) !StatusCode {
                     _ = path_params;
-                    return .ok;
+                    return error.OHNOOOO;
                 }
             },
             .{ .authenticate = false },
@@ -92,7 +91,7 @@ const Router = RouterType(
     ResourceTree,
     Context,
     JWTAuthenticator,
-    LoggingRouteProcessor(Context),
+    LoggingOnRequestProcessor(Context),
 );
 
 pub fn main() !void {

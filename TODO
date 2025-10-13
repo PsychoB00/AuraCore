@@ -42,6 +42,10 @@ json:
     - [x] Add asserts
     - [x] Make comptime json type validator
 
+net:
+    - headers:
+        [o] Add Host
+
 routing:
     - [x] Add asserts
     - [x] Fix namespacing
@@ -53,13 +57,13 @@ routing:
         - [x] Rework for ResourceTree rework
         - [x] Fix for StaticResource rework
         - [o] Add unauthorized function
-        - [o] Add RouteProcessor
+        - [x] Add OnRequestProcessor
         - [x] Reduce nesting and fix namespacing
     - 0.0.7:
-        - [o] Fix the bad/unexpresive error handeling
+        - [x] Fix the bad/unexpresive error handeling
         - [x] Change the passing of allocator in *const Allocator to Allocator
     - 0.0.10:
-        - [o] Remove Request parameter from StaticRoute
+        - [x] Remove Request parameter from StaticRoute
     - resources:
         - [x] Change StaticResource data from comptime embeded file to runtime read file
         - [x] Fix StaticResource namespacing
@@ -72,12 +76,11 @@ routing:
         - [x] Add Cache-Control to StaticResource
         - [x] Add other nessesary headers to StaticResource
     - 0.0.10:
-        - [o] Remove Request parameter from APIResource
-        - [] Add HeaderParameters to APIResource
-    - RouteProcessor:
-        - [o] Fix the request invalidation
-        - [o] Finish all the functions for errorous behaviour
-        - [] Add optional function checking to isRouteProcessor
-        - [] Change name from RouteProcessor to OnRequestProcessor
+        - [x] Remove Request parameter from APIResource
+        - [o] Add HeaderParameters for APIResource
+    - OnRequestProcessor:
+        - [x] Fix the request invalidation
+        - [x] Finish all the functions for errorous behaviour
+        - [x] Change name from RouteProcessor to OnRequestProcessor
     - Respose:
         - [] Create Response struct

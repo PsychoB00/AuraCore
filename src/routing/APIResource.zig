@@ -2,7 +2,6 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
-const StatusCode = zap.http.StatusCode;
 
 const comptimePrint = std.fmt.comptimePrint;
 const eql = std.mem.eql;
@@ -19,7 +18,8 @@ const isContext = core.context.isContext;
 
 /// Third Party
 const zap = @import("zap");
-const Request = zap.Request;
+
+const StatusCode = zap.http.StatusCode;
 
 pub const ParametersType = enum {
     path,
@@ -48,7 +48,6 @@ pub fn isResourceParameters(comptime Type: type) bool {
 ///     - *const PathParameters
 ///     - *const QueryParameters
 ///     - *const BodyParameters
-///     - *const Request
 ///     - *Context
 ///     - Allocator
 /// - Return type of http method must be either StatusCode or !StatusCode.
@@ -106,7 +105,6 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                 var path_param_found = false;
                 var query_param_found = false;
                 var body_param_found = false;
-                var request_param_found = false;
                 var context_param_found = false;
                 var allocator_param_found = false;
 
@@ -134,15 +132,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                         },
                         .pointer => |param_info| {
                             if (param_info.is_const) {
-                                if (param_info.child == Request) {
-                                    // Request
-                                    if (request_param_found)
-                                        @compileError(comptimePrint(
-                                            "Duplicate Request parameter found in {s}.{s}",
-                                            .{ @typeName(Controller), decl.name },
-                                        ));
-                                    request_param_found = true;
-                                } else if (isPathParameters(param_info.child)) {
+                                if (isPathParameters(param_info.child)) {
                                     // Path parameters
                                     if (path_param_found)
                                         @compileError(comptimePrint(

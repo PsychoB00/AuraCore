@@ -121,7 +121,7 @@ fn ResourceParameters(comptime MethodParametersType: type) type {
 pub fn StaticRoute(
     comptime ResourceType: type,
     comptime ContextType: type,
-    comptime RouteProcessorType: type,
+    comptime OnRequestProcessorType: type,
     comptime Path: []const u8,
     comptime Options: ResourceOptions,
 ) type {
@@ -135,114 +135,120 @@ pub fn StaticRoute(
         error_strategy: ErrorStrategy = Options.error_strategy,
 
         /// GET method called by zap
-        pub fn get(_: *@This(), allocator: Allocator, context: *ContextType, request: Request) !void {
+        pub fn get(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.GET, allocator, context, &request),
-                inline .api => try _callAPIMethod(.GET, allocator, context, &request),
+                inline .static => _sendStaticResource(.GET, allocator, context, &request),
+                inline .api => _callAPIMethod(.GET, allocator, context, &request),
             }
         }
 
         /// POST method called by zap
         pub fn post(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.POST, allocator, context, &request),
-                inline .api => try _callAPIMethod(.POST, allocator, context, &request),
+                inline .static => _sendStaticResource(.POST, allocator, context, &request),
+                inline .api => _callAPIMethod(.POST, allocator, context, &request),
             }
         }
 
         /// PUT method called by zap
         pub fn put(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.PUT, allocator, context, &request),
-                inline .api => try _callAPIMethod(.PUT, allocator, context, &request),
+                inline .static => _sendStaticResource(.PUT, allocator, context, &request),
+                inline .api => _callAPIMethod(.PUT, allocator, context, &request),
             }
         }
 
         /// DELETE method called by zap
         pub fn delete(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.DELETE, allocator, context, &request),
-                inline .api => try _callAPIMethod(.DELETE, allocator, context, &request),
+                inline .static => _sendStaticResource(.DELETE, allocator, context, &request),
+                inline .api => _callAPIMethod(.DELETE, allocator, context, &request),
             }
         }
 
         /// PATCH method called by zap
         pub fn patch(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.PATCH, allocator, context, &request),
-                inline .api => try _callAPIMethod(.PATCH, allocator, context, &request),
+                inline .static => _sendStaticResource(.PATCH, allocator, context, &request),
+                inline .api => _callAPIMethod(.PATCH, allocator, context, &request),
             }
         }
 
         /// OPTIONS method called by zap
         pub fn options(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.OPTIONS, allocator, context, &request),
-                inline .api => try _callAPIMethod(.OPTIONS, allocator, context, &request),
+                inline .static => _sendStaticResource(.OPTIONS, allocator, context, &request),
+                inline .api => _callAPIMethod(.OPTIONS, allocator, context, &request),
             }
         }
 
         /// HEAD method called by zap
         pub fn head(_: *StaticRouteType, allocator: Allocator, context: *ContextType, request: Request) !void {
             switch (resource_category) {
-                inline .static => try _sendStaticResource(.HEAD, allocator, context, &request),
-                inline .api => try _callAPIMethod(.HEAD, allocator, context, &request),
+                inline .static => _sendStaticResource(.HEAD, allocator, context, &request),
+                inline .api => _callAPIMethod(.HEAD, allocator, context, &request),
             }
         }
 
         /// Sends StaticResource and sets appropriate headers
-        fn _sendStaticResource(comptime MethodType: Method, allocator: Allocator, context: *ContextType, request: *const Request) !void {
-            var processor: RouteProcessorType = undefined;
-            processor.init(allocator, context, request);
+        fn _sendStaticResource(comptime MethodType: Method, allocator: Allocator, context: *ContextType, request: *const Request) void {
+            var processor: OnRequestProcessorType = undefined;
+            processor.init(StaticRouteType, MethodType, allocator, context, request);
             defer processor.deinit();
 
-            if (comptime MethodType != .GET) {
-                if (comptime hasFn(RouteProcessorType, "requestError"))
-                    processor.requestError(MethodType, StaticRouteType, .method_not_allowed);
+            if (comptime !(MethodType == .GET or MethodType == .HEAD)) {
+                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    processor.requestInvalid(error.UnsupportedMethod);
                 request.setStatus(.method_not_allowed);
                 return;
             }
 
             if (request.path == null or request.path.?.len != Path.len) {
-                if (comptime hasFn(RouteProcessorType, "requestError"))
-                    processor.requestError(MethodType, StaticRouteType, .not_found);
+                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    processor.requestInvalid(error.MalformedPath);
                 request.setStatus(.not_found);
                 return;
             }
 
-            if (comptime hasMethod(RouteProcessorType, "start"))
-                processor.start(MethodType, StaticRouteType);
+            if (comptime MethodType == .GET) {
+                var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
+                const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
+                    if (comptime hasFn(OnRequestProcessorType, "readFileError"))
+                        processor.readFileError(err);
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
+                if (body.len >= body_buffer.len) {
+                    if (comptime hasFn(OnRequestProcessorType, "readFileError"))
+                        processor.readFileError(error.FileToBig);
+                    request.setStatus(.internal_server_error);
+                    return;
+                }
 
-            var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
-            const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
-                if (comptime hasFn(RouteProcessorType, "readFileError"))
-                    processor.readFileError(MethodType, StaticRouteType, err);
-                request.setStatus(.internal_server_error);
-                return;
-            };
-            if (body.len >= body_buffer.len) {
-                if (comptime hasFn(RouteProcessorType, "readFileError"))
-                    processor.readFileError(MethodType, StaticRouteType, error.FileToBig);
-                request.setStatus(.internal_server_error);
-                return;
+                _setStaticResourceHeaders(body.len, request) catch |err| {
+                    if (comptime hasFn(OnRequestProcessorType, "setHeadersError"))
+                        processor.setHeadersError(err);
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
+
+                request.sendBody(body) catch |err| {
+                    if (comptime hasFn(OnRequestProcessorType, "sendBodyError"))
+                        processor.sendBodyError(err);
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
+            } else if (comptime MethodType == .HEAD) {
+                _setStaticResourceHeaders(0, request) catch |err| {
+                    if (comptime hasFn(OnRequestProcessorType, "setHeadersError"))
+                        processor.setHeadersError(err);
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
             }
 
-            _setStaticResourceHeaders(body.len, request) catch |err| {
-                if (comptime hasFn(RouteProcessorType, "setHeadersError"))
-                    processor.setHeadersError(MethodType, StaticRouteType, err);
-                request.setStatus(.internal_server_error);
-                return;
-            };
-
-            request.sendBody(body) catch |err| {
-                if (comptime hasFn(RouteProcessorType, "sendBodyError"))
-                    processor.sendBodyError(MethodType, StaticRouteType, err);
-                request.setStatus(.internal_server_error);
-                return;
-            };
-
-            if (comptime hasMethod(RouteProcessorType, "success"))
-                processor.success(MethodType, StaticRouteType, .ok);
+            if (comptime hasMethod(OnRequestProcessorType, "success"))
+                processor.success(.ok);
         }
 
         /// Sets appropriate headers for StaticResource
@@ -270,24 +276,27 @@ pub fn StaticRoute(
             allocator: Allocator,
             context: *ContextType,
             request: *const Request,
-        ) !void {
-            var processor: RouteProcessorType = undefined;
-            processor.init(allocator, context, request);
+        ) void {
+            var processor: OnRequestProcessorType = undefined;
+            processor.init(StaticRouteType, MethodType, allocator, context, request);
             defer processor.deinit();
 
             if (comptime !hasFn(ResourceType.controller_t, methodToLower(MethodType))) {
-                request.setStatus(.not_found);
+                if (comptime MethodType == .GET or MethodType == .HEAD) {
+                    if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                        processor.requestInvalid(error.NotFound);
+                    request.setStatus(.not_found);
+                } else {
+                    if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                        processor.requestInvalid(error.NotImplemented);
+                    request.setStatus(.not_implemented);
+                }
                 return;
             }
-            if (comptime hasMethod(RouteProcessorType, "start"))
-                processor.start(MethodType, StaticRouteType);
 
             const method_fn = @field(ResourceType.controller_t, methodToLower(MethodType));
             const method_type = @TypeOf(method_fn);
-
-            const resource_parameters_type = ResourceParameters(
-                MethodParameters(method_type),
-            );
+            const resource_parameters_type = ResourceParameters(MethodParameters(method_type));
 
             var resource_parameters: resource_parameters_type = undefined;
 
@@ -305,16 +314,16 @@ pub fn StaticRoute(
                 switch (field.type.parameters_type) {
                     inline .path => {
                         field.type.parse(Path, allocator, request, parameters_ptr) catch |err| {
-                            if (comptime hasMethod(RouteProcessorType, "parametersParseError"))
-                                processor.parametersParseError(MethodType, StaticRouteType, .path, err);
+                            if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                                processor.parametersInvalid(.path, err);
                             request.setStatus(.not_found);
                             return;
                         };
                     },
                     inline .query => {
                         field.type.parse(allocator, request, parameters_ptr) catch |err| {
-                            if (comptime hasMethod(RouteProcessorType, "parametersParseError"))
-                                processor.parametersParseError(MethodType, StaticRouteType, .query, err);
+                            if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                                processor.parametersInvalid(.query, err);
                             request.setStatus(.not_found);
                             return;
                         };
@@ -323,8 +332,8 @@ pub fn StaticRoute(
                     },
                     inline .body => {
                         field.type.parse(allocator, request, parameters_ptr) catch |err| {
-                            if (comptime hasMethod(RouteProcessorType, "parametersParseError"))
-                                processor.parametersParseError(MethodType, StaticRouteType, .body, err);
+                            if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                                processor.parametersInvalid(.body, err);
                             request.setStatus(.bad_request);
                             return;
                         };
@@ -334,8 +343,18 @@ pub fn StaticRoute(
                 }
             }
 
-            //if (!(query_parsed orelse true) or !(body_parsed orelse true))
-            //return ResourceParametersError.BadRequest;
+            if (!(query_parsed orelse true)) {
+                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    processor.requestInvalid(error.ExcessQuery);
+                request.setStatus(.not_found);
+                return;
+            }
+            if (!(body_parsed orelse true)) {
+                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    processor.requestInvalid(error.ExcessBody);
+                request.setStatus(.bad_request);
+                return;
+            }
 
             // Call method
             const call_result = @call(
@@ -345,19 +364,23 @@ pub fn StaticRoute(
                     MethodParameters(method_type),
                     allocator,
                     context,
-                    request,
                     &resource_parameters,
                 ),
             );
 
             if (comptime @typeInfo(@TypeOf(call_result)) == .error_union) {
-                const status = call_result catch |err| return err;
-                if (comptime hasMethod(RouteProcessorType, "success"))
-                    processor.success(MethodType, StaticRouteType, .ok);
+                const status = call_result catch |err| {
+                    if (comptime hasFn(OnRequestProcessorType, "handlerError"))
+                        processor.handlerError(err);
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
+                if (comptime hasMethod(OnRequestProcessorType, "success"))
+                    processor.success(.ok);
                 request.setStatus(status);
             } else {
-                if (comptime hasMethod(RouteProcessorType, "success"))
-                    processor.success(MethodType, StaticRouteType, .ok);
+                if (comptime hasMethod(OnRequestProcessorType, "success"))
+                    processor.success(.ok);
                 request.setStatus(call_result);
             }
         }
@@ -367,7 +390,6 @@ pub fn StaticRoute(
             comptime ParametersType: type,
             allocator: Allocator,
             context: *ContextType,
-            request: *const Request,
             resource_parameters: *const ResourceParameters(ParametersType),
         ) ParametersType {
             const parameters_info = @typeInfo(ParametersType);
@@ -380,8 +402,6 @@ pub fn StaticRoute(
                     fieldPtr(ParametersType, field.name, &res).* = allocator;
                 } else if (comptime field_type == ContextType) {
                     fieldPtr(ParametersType, field.name, &res).* = context;
-                } else if (comptime field_type == Request) {
-                    fieldPtr(ParametersType, field.name, &res).* = request;
                 } else if (comptime isResourceParameters(field_type)) {
                     const resource_parameters_info = @typeInfo(ResourceParameters(ParametersType));
 
@@ -406,7 +426,7 @@ pub fn AuthStaticRoute(
     comptime ResourceType: type,
     comptime ContextType: type,
     comptime AuthenticatorType: type,
-    comptime RouteProcessorType: type,
+    comptime OnRequestProcessorType: type,
     comptime Path: []const u8,
     comptime Options: ResourceOptions,
 ) type {
@@ -419,7 +439,7 @@ pub fn AuthStaticRoute(
         const static_route_t = StaticRoute(
             ResourceType,
             ContextType,
-            RouteProcessorType,
+            OnRequestProcessorType,
             Path,
             Options,
         );

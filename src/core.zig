@@ -16,9 +16,9 @@ pub const log = @import("log.zig");
 pub const jwt = @import("jwt.zig");
 
 pub const routing = struct {
-    const route_processor = @import("routing/RouteProcessor.zig");
-    pub const LoggingRouteProcessor = route_processor.LoggingRouteProcessor;
-    pub const isRouteProcessor = route_processor.isRouteProcessor;
+    const route_processor = @import("routing/OnRequestProcessor.zig");
+    pub const LoggingOnRequestProcessor = route_processor.LoggingOnRequestProcessor;
+    pub const isOnRequestProcessor = route_processor.isOnRequestProcessor;
 
     const router = @import("routing/Router.zig");
     pub const ResourceOptions = router.ResourceOptions;

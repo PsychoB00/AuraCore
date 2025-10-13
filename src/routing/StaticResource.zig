@@ -26,6 +26,7 @@ pub const StaticResourceOptions = struct {
 ///
 /// `FilePath` must be valid file path relative to current working directory and end with extention
 /// `SROptions` are options for both file reading and responce building
+/// Only GET and HEAD requests van be called on StaticResource
 pub fn StaticResource(comptime FilePath: []const u8, comptime SROptions: StaticResourceOptions, comptime Options: ResourceOptions) type {
     // `FilePath` correctness assertion
     const file_extention_start_index = lastIndexOfScalar(u8, FilePath, '.') orelse

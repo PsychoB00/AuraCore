@@ -3,9 +3,11 @@ const std = @import("std");
 
 const Stat = std.fs.File.Stat;
 const Writer = std.Io.Writer;
+const Reader = std.Io.Reader;
 
 const comptimePrint = std.fmt.comptimePrint;
 const assert = std.debug.assert;
+const eql = std.mem.eql;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -37,6 +39,60 @@ const ContentDispositionTag = enum {
 
 /// Cache-Control header describes if or how, to cache a resource
 pub const CacheControl = union(CacheControlTag) {
+    pub const CacheSetting = struct {
+        pub const MaxStale = union(enum) {
+            use: bool,
+            Setting: u32,
+        };
+
+        max_age: ?u32 = null,
+        s_maxage: ?u32 = null,
+        max_stale: MaxStale = .{ .use = false },
+        min_fresh: ?u32 = null,
+
+        must_revalidate: bool = false,
+        proxy_revalidate: bool = false,
+        stale_while_revalidate: ?u32 = null,
+        stale_if_error: ?u32 = null,
+
+        imutable: bool = false,
+        only_if_cached: bool = false,
+
+        pub fn toString(comptime Setting: CacheSetting) []const u8 {
+            var res: []const u8 = "";
+
+            if (Setting.max_age != null)
+                res = res ++ comptimePrint("max-age={}, ", .{Setting.max_age.?});
+            if (Setting.s_maxage != null)
+                res = res ++ comptimePrint("s-maxage={}, ", .{Setting.s_maxage.?});
+            if (Setting.max_stale == .use and Setting.max_stale.use)
+                res = res ++ "max-stale, "
+            else if (Setting.max_stale == .Setting)
+                res = res ++ comptimePrint("max-stale={}, ", .{Setting.max_stale.Setting});
+            if (Setting.min_fresh != null)
+                res = res ++ comptimePrint("min-fresh={}, ", .{Setting.min_fresh.?});
+
+            if (Setting.must_revalidate)
+                res = res ++ "must-revalidate, ";
+            if (Setting.proxy_revalidate)
+                res = res ++ "proxy-revalidate, ";
+            if (Setting.stale_while_revalidate != null)
+                res = res ++ comptimePrint("stale-while-revalidate={}, ", .{Setting.stale_while_revalidate.?});
+            if (Setting.stale_if_error != null)
+                res = res ++ comptimePrint("stale-if-error={}, ", .{Setting.stale_if_error.?});
+
+            if (Setting.imutable)
+                res = res ++ "imutable, ";
+            if (Setting.only_if_cached)
+                res = res ++ "only-if-cached, ";
+
+            return if (res.len >= 2)
+                res[0..(res.len - 2)]
+            else
+                "";
+        }
+    };
+
     no_store: void,
     no_cache: void,
     private: CacheSetting,
@@ -64,60 +120,6 @@ pub const CacheControl = union(CacheControlTag) {
     }
 };
 
-const MaxStale = union(enum) {
-    use: bool,
-    Setting: u32,
-};
-
-pub const CacheSetting = struct {
-    max_age: ?u32 = null,
-    s_maxage: ?u32 = null,
-    max_stale: MaxStale = .{ .use = false },
-    min_fresh: ?u32 = null,
-
-    must_revalidate: bool = false,
-    proxy_revalidate: bool = false,
-    stale_while_revalidate: ?u32 = null,
-    stale_if_error: ?u32 = null,
-
-    imutable: bool = false,
-    only_if_cached: bool = false,
-
-    pub fn toString(comptime Setting: CacheSetting) []const u8 {
-        var res: []const u8 = "";
-
-        if (Setting.max_age != null)
-            res = res ++ comptimePrint("max-age={}, ", .{Setting.max_age.?});
-        if (Setting.s_maxage != null)
-            res = res ++ comptimePrint("s-maxage={}, ", .{Setting.s_maxage.?});
-        if (Setting.max_stale == .use and Setting.max_stale.use)
-            res = res ++ "max-stale, "
-        else if (Setting.max_stale == .Setting)
-            res = res ++ comptimePrint("max-stale={}, ", .{Setting.max_stale.Setting});
-        if (Setting.min_fresh != null)
-            res = res ++ comptimePrint("min-fresh={}, ", .{Setting.min_fresh.?});
-
-        if (Setting.must_revalidate)
-            res = res ++ "must-revalidate, ";
-        if (Setting.proxy_revalidate)
-            res = res ++ "proxy-revalidate, ";
-        if (Setting.stale_while_revalidate != null)
-            res = res ++ comptimePrint("stale-while-revalidate={}, ", .{Setting.stale_while_revalidate.?});
-        if (Setting.stale_if_error != null)
-            res = res ++ comptimePrint("stale-if-error={}, ", .{Setting.stale_if_error.?});
-
-        if (Setting.imutable)
-            res = res ++ "imutable, ";
-        if (Setting.only_if_cached)
-            res = res ++ "only-if-cached, ";
-
-        return if (res.len >= 2)
-            res[0..(res.len - 2)]
-        else
-            "";
-    }
-};
-
 const CacheControlTag = enum {
     no_store,
     no_cache,
@@ -125,6 +127,7 @@ const CacheControlTag = enum {
     public,
 };
 
+/// LastModified header describes when was a resource last altered
 pub const LastModified = struct {
     /// Length of `dest` must be 29 bytes or longer
     pub fn toString(stat: Stat, dest: []u8) !void {

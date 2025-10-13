@@ -14,7 +14,7 @@ const StaticRoute = static_route.StaticRoute;
 const AuthStaticRoute = static_route.AuthStaticRoute;
 
 const fieldPtr = core.utils.fieldPtr;
-const isRouteProcessor = core.routing.isRouteProcessor;
+const isOnRequestProcessor = core.routing.isOnRequestProcessor;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 
@@ -85,8 +85,8 @@ pub fn Router(
                 } else if (isAPIResource(decl_value)) {
                     if (decl_value.infered_context_t != null and decl_value.infered_context_t != ContextType)
                         @compileError(comptimePrint(
-                            "Infered context type of a APIResource is different then `ContexType`, found in {s}",
-                            .{@typeName(Node)},
+                            "Infered context type of a APIResource ({s}) is different then `ContexType`, found in {s}",
+                            .{ @typeName(decl_value.infered_context_t.?), @typeName(Node) },
                         ));
 
                     resource_names[resource_names_index] = decl.name;
@@ -183,8 +183,8 @@ pub fn Router(
     };
 
     // `RouteProcessorType` correctness assertion
-    if (!isRouteProcessor(RouteProcessorType))
-        @compileError("`RouteProcessorType` must be RouteProcessor");
+    if (!isOnRequestProcessor(RouteProcessorType))
+        @compileError("`RouteProcessorType` must be OnRequestProcessor");
     if (RouteProcessorType.context_t != ContextType)
         @compileError("Context of `RouteProcessorType` isn't same as `ContextType`");
 
