@@ -14,6 +14,21 @@ pub const utils = struct {
 pub const context = @import("context.zig");
 pub const log = @import("log.zig");
 pub const jwt = @import("jwt.zig");
+pub const json = @import("json.zig");
+
+pub const net = struct {
+    pub const headers = @import("net/headers.zig");
+    pub const CacheControl = headers.CacheControl;
+    pub const LastModified = headers.LastModified;
+
+    const method = @import("net/method.zig");
+    pub const methodToLower = method.methodToLower;
+    pub const methodToUpper = method.methodToUpper;
+
+    const status_code = @import("net/status_code.zig");
+    pub const statusCodeToLower = status_code.statusCodeToLower;
+    pub const statusCodeToUpper = status_code.statusCodeToUpper;
+};
 
 pub const routing = struct {
     const route_processor = @import("routing/OnRequestProcessor.zig");
@@ -44,22 +59,6 @@ pub const routing = struct {
     pub const isQueryParameters = query_parameters.isQueryParameters;
 
     const body_parameters = @import("routing/BodyParameters.zig");
-    pub const MIMEType = body_parameters.MIMEType;
     pub const BodyParameters = body_parameters.BodyParameters;
     pub const isBodyParameters = body_parameters.isBodyParameters;
-};
-
-pub const net = struct {
-    const headers = @import("net/headers.zig");
-    pub const CacheControl = headers.CacheControl;
-    pub const ContentDisposition = headers.ContentDisposition;
-    pub const LastModified = headers.LastModified;
-
-    const method = @import("net/method.zig");
-    pub const methodToLower = method.methodToLower;
-    pub const methodToUpper = method.methodToUpper;
-
-    const status_code = @import("net/status_code.zig");
-    pub const statusCodeToLower = status_code.statusCodeToLower;
-    pub const statusCodeToUpper = status_code.statusCodeToUpper;
 };

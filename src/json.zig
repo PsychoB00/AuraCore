@@ -73,8 +73,8 @@ pub fn validateJsonType(comptime Type: type) void {
 /// Parse json AnyValue to a value of `Type`
 ///
 /// String values and array values allocated by this functions are owned by result, free them accordingly
-pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: *const Allocator) !Type {
-    validateJsonType(ParserType);
+pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: Allocator) !Type {
+    comptime validateJsonType(Type);
 
     switch (@typeInfo(Type)) {
         inline .bool => {
@@ -131,7 +131,7 @@ pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const Parse
                 ));
             }
 
-            return res.toOwnedSlice(allocator.*) catch return ParserType.Error.OutOfMemory;
+            return res.toOwnedSlice(allocator) catch return ParserType.Error.OutOfMemory;
         },
         inline .optional => |info| {
             // Default for optionals is null

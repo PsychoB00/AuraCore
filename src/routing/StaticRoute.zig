@@ -14,7 +14,8 @@ const bufPrint = std.fmt.bufPrint;
 /// Aura
 const core = @import("../core.zig");
 
-const ContentDisposition = core.net.ContentDisposition;
+const ContentLength = core.net.headers.ContentLength;
+const ContentDisposition = core.net.headers.ContentDisposition;
 const CacheControl = core.net.CacheControl;
 const LastModified = core.net.LastModified;
 
@@ -253,12 +254,18 @@ pub fn StaticRoute(
 
         /// Sets appropriate headers for StaticResource
         fn _setStaticResourceHeaders(body_length: usize, request: *const Request) !void {
-            var content_length_buffer: [20]u8 = undefined;
-            const content_length = try bufPrint(&content_length_buffer, "{}", .{body_length});
+            var content_length_buffer: [ContentLength.max_format_len]u8 = undefined;
+            const content_length_header: ContentLength = .{
+                .length = body_length,
+            };
+            const content_length = try bufPrint(&content_length_buffer, "{f}", .{content_length_header});
+
+            var content_disposition_buffer: [ContentDisposition.max_format_len]u8 = undefined;
+            const content_disposition = try bufPrint(&content_disposition_buffer, "{f}", .{ResourceType.sr_options.content_disposition});
 
             try request.setContentTypeFromFilename(ResourceType.file_path);
-            try request.setHeader("content-length", content_length);
-            try request.setHeader("content-disposition", ContentDisposition.toString(ResourceType.sr_options.content_disposition));
+            try request.setHeader(ContentLength.header_name, content_length);
+            try request.setHeader(ContentDisposition.header_name, content_disposition);
             try request.setHeader("cache-control", CacheControl.toString(ResourceType.sr_options.cache_control));
             if (ResourceType.sr_options.last_modified) {
                 const stat = try cwd().statFile(ResourceType.file_path);

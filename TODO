@@ -1,6 +1,8 @@
 general:
     - DONT FORGET TO INCR THE VERSIONS
     - [x] Add versions
+0.0.12:
+    - [] Do inline for checking functions etc.
 
 documantation:
     - [x] Add docs generation
@@ -44,7 +46,17 @@ json:
 
 net:
     - headers:
-        [o] Add Host
+        [x] Add Host
+    - 0.0.12:
+        [x] Add Content-Type
+        [] Add all MIME type to Content-Type
+        [o] Rework older header to the new format
+        [x] Add isHeader
+        [x] Rework Content-Disposition
+        [] Change Content-Disposition.filename.encoded.language to actual language implementation
+        [] Add support for multipart
+        [x] Add Content-Length
+        [x] Add Accept
 
 routing:
     - [x] Add asserts
@@ -78,6 +90,9 @@ routing:
     - 0.0.10:
         - [x] Remove Request parameter from APIResource
         - [o] Add HeaderParameters for APIResource
+    - 0.0.12:
+        - [o] Fix StaticResource for headers rework
+        - [o] Fix APIResource for headers rework
     - OnRequestProcessor:
         - [x] Fix the request invalidation
         - [x] Finish all the functions for errorous behaviour

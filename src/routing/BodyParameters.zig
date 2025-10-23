@@ -2,17 +2,20 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Reader = std.Io.Reader;
 
 const comptimePrint = std.fmt.comptimePrint;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
+const eqlDeep = std.meta.eql;
 
 /// Aura
 const core = @import("../core.zig");
-const json = @import("../json.zig");
 
+const ContentType = core.net.headers.ContentType;
 const ParametersType = core.routing.ParametersType;
 
 const isResourceParameters = core.routing.isResourceParameters;
+const asAny = core.json.asAny;
 
 /// Third Party
 const zap = @import("zap");
@@ -21,153 +24,137 @@ const Request = zap.Request;
 const zimdjson = @import("zimdjson");
 const JsonParser = zimdjson.ondemand.FullParser(.default);
 
-/// Supported MIME types are:
-/// - `text/plain`
-///     - extention: .txt
-///     - compatible types: []const u8
-/// - `application/json`
-///     - extention: .json
-///     - compatible types:
-///         - JSON compatible types
-///         - []const u8 for enum
-///         - []const u8 for date and time, formated to ISO 8601
-pub const MIMEType = enum {
-    text,
-    json,
-};
-
 pub const ParseError = error{
     MissingBody,
     MissingContentType,
-    UnsupportedMIMEType,
+    UnsupportedContentType,
 };
 
 /// Parameters for larger and more complex data
 ///
 /// - `Structure` is a type representing content of the body, can be optional type.
-/// - `SupportedMIMETypes` can be either a single MIMEType value or array of them, if request has "Content-Type"
-///   which isn't defined in `SupportedMIMETypes`, returned status code will be UNSUPPORTED_MEDIA_TYPE
+/// - `SupportedContentTypes` can be either a single ContentType value or array of them, if request has "Content-Type"
+///   which isn't defined in `SupportedContentTypes`, parse will fail
 /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
 ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
 ///   the lifetime of the memory to lifetime of the zap.Request.
-pub fn BodyParameters(comptime Structure: type, comptime SupportedMIMETypes: anytype) type {
+pub fn BodyParameters(comptime Structure: type, comptime SupportedContentTypes: anytype) type {
     // Generated BodyParameters tools
     const Gen = struct {
-        /// Checks if `Structure` is a valid representation of `Type`
-        fn _isStructureValid(comptime Type: MIMEType) bool {
+        /// Checks if `Structure` is a valid representation of `Header`
+        fn _isStructureValid(comptime Header: ContentType) void {
             const structure_type =
                 if (@typeInfo(Structure) == .optional)
                     @typeInfo(Structure).optional.child
                 else
                     Structure;
 
-            switch (Type) {
-                .text => return structure_type == []const u8,
-                .json => {
-                    json.validateJsonType(structure_type);
-                    return true;
-                },
+            ContentType.validateType(Header, structure_type);
+        }
+
+        /// Returns how many headers does `SupportedContentTypes` represent
+        fn _ContentTypesCount() usize {
+            switch (@typeInfo(@TypeOf(SupportedContentTypes))) {
+                .array => return SupportedContentTypes.len,
+                .@"struct" => return 1,
+                else => @compileError("Unsupported type of `SupportedContentTypes` found"),
             }
         }
 
-        /// Returns how many MIME types does `SupportedMIMETypes` represent
-        fn _MIMETypesCount() usize {
-            switch (@typeInfo(@TypeOf(SupportedMIMETypes))) {
-                .array => return SupportedMIMETypes.len,
-                .@"enum" => return 1,
-                else => @compileError("Unsupported type of `SupportedMIMETypes` found"),
-            }
-        }
-
-        /// If `SupportedMIMETypes` is a single MIME type converts it into an array
-        fn _generateMIMETypesArray() [_MIMETypesCount()]MIMEType {
-            switch (@typeInfo(@TypeOf(SupportedMIMETypes))) {
-                .array => return SupportedMIMETypes,
-                .@"enum" => return [1]MIMEType{SupportedMIMETypes},
-                else => @compileError("Unsupported type of `SupportedMIMETypes` found"),
+        /// If `SupportedContentTypes` is a single header, converts it into an array
+        fn _generateContentTypesArray() [_ContentTypesCount()]ContentType {
+            switch (@typeInfo(@TypeOf(SupportedContentTypes))) {
+                .array => return SupportedContentTypes,
+                .@"struct" => return [1]ContentType{SupportedContentTypes},
+                else => @compileError("Unsupported type of `SupportedContentTypes` found"),
             }
         }
     };
 
-    // `SupportedMIMETypes` correctness assertion
-    switch (@typeInfo(@TypeOf(SupportedMIMETypes))) {
+    // `SupportedContentTypes` correctness assertion
+    switch (@typeInfo(@TypeOf(SupportedContentTypes))) {
         .array => |info| {
-            if (info.child != MIMEType)
-                @compileError("Array with element type which isnt MIMEType found");
-            if (SupportedMIMETypes.len == 0)
-                @compileError("`SupportedMIMETypes` must have at least one element");
+            if (info.child != ContentType)
+                @compileError("Array with element type which isn't ContentType found");
+            if (SupportedContentTypes.len == 0)
+                @compileError("`SupportedContentTypes` must have at least one element");
         },
-        .@"enum" => {
-            if (@TypeOf(SupportedMIMETypes) != MIMEType)
-                @compileError("Enum which isn't MIMEType found");
+        .@"struct" => {
+            if (@TypeOf(SupportedContentTypes) != ContentType)
+                @compileError("Struct which isn't ContentType found");
         },
-        else => @compileError("Unsupported type of `SupportedMIMETypes` found"),
+        else => @compileError("Unsupported type of `SupportedContentTypes` found"),
     }
 
-    const supported_mime_types_array = Gen._generateMIMETypesArray();
+    const supported_content_types_array = Gen._generateContentTypesArray();
 
-    for (supported_mime_types_array) |mime_type| {
-        if (!Gen._isStructureValid(mime_type))
-            @compileError(comptimePrint(
-                "Failed to validate MIMEType ({})",
-                .{mime_type},
-            ));
+    for (supported_content_types_array) |content_type| {
+        Gen._isStructureValid(content_type);
     }
 
     return struct {
         const BodyParametersType = @This();
         pub const parameters_type: ParametersType = .body;
         pub const structure = Structure;
-        pub const supported_mime_types = SupportedMIMETypes;
+        pub const supported_content_types = SupportedContentTypes;
 
         data: Structure,
 
         /// Parse BodyParameters from `request`
         pub fn parse(allocator: Allocator, request: *const Request, dest: *BodyParametersType) !void {
-            if (request.body == null) {
+            if (request.body == null)
                 if (comptime @typeInfo(Structure) == .optional) {
                     dest.data = null;
                     return;
                 } else return ParseError.MissingBody;
-            }
 
-            const content_type = request.getHeaderCommon(.content_type) orelse
+            var content_type: ContentType = undefined;
+
+            const content_type_string = request.getHeaderCommon(.content_type) orelse
                 return ParseError.MissingContentType;
+            var content_type_reader = Reader.fixed(content_type_string);
+            try content_type.parse(&content_type_reader, allocator);
 
-            inline for (supported_mime_types_array) |mime_type| inline_loop: {
-                switch (mime_type) {
-                    inline .text => {
-                        // text/plain
-                        if (!eqlIgnoreCase(content_type, "text/plain"))
-                            break :inline_loop;
+            inline for (supported_content_types_array) |supported_content_type| inline_loop: {
+                if (!eqlDeep(content_type, supported_content_type))
+                    break :inline_loop;
 
-                        dest.data = try allocator.dupe(u8, request.body.?);
-                        return;
+                switch (supported_content_type.mime) {
+                    inline .text => |@"type"| {
+                        switch (@"type") {
+                            inline .html, .plain => {
+                                dest.data = try allocator.dupe(u8, request.body.?);
+                            },
+                            inline .wildcard => unreachable,
+                        }
                     },
-                    inline .json => {
-                        // application/json
-                        if (!eqlIgnoreCase(content_type, "application/json"))
-                            break :inline_loop;
+                    inline .application => |@"type"| {
+                        switch (@"type") {
+                            inline .json => {
+                                var parser = JsonParser.init;
+                                defer parser.deinit(allocator);
 
-                        var parser = JsonParser.init;
-                        defer parser.deinit(allocator);
+                                const document: JsonParser.Document = try parser.parseFromSlice(allocator, request.body.?);
+                                const document_value = try document.asAny();
 
-                        const document: JsonParser.Document = try parser.parseFromSlice(allocator, request.body.?);
-                        const document_value = try document.asAny();
-
-                        dest.data = try json.asAny(JsonParser, Structure, &document_value, allocator);
-                        return;
+                                dest.data = try asAny(JsonParser, Structure, &document_value, allocator);
+                            },
+                            inline .wildcard => unreachable,
+                        }
                     },
+                    inline .wildcard => unreachable,
                 }
+
+                return;
             }
 
-            return ParseError.UnsupportedMIMEType;
+            return ParseError.UnsupportedContentType;
         }
     };
 }
 
 pub fn isBodyParameters(comptime Type: type) bool {
     return isResourceParameters(Type) and Type.parameters_type == .body and
-        @hasDecl(Type, "supported_mime_types") and
-        BodyParameters(Type.structure, Type.supported_mime_types) == Type;
+        @hasDecl(Type, "supported_content_types") and
+        BodyParameters(Type.structure, Type.supported_content_types) == Type;
 }

@@ -18,7 +18,7 @@ const APIResource = core.routing.APIResource;
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
 const BodyParameters = core.routing.BodyParameters;
-const MIMEType = core.routing.MIMEType;
+const ContentType = core.net.headers.ContentType;
 
 /// Third Party
 const zap = @import("zap");
@@ -73,13 +73,14 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    path_params: *const PathParameters(struct {
-                        items: u64,
-                        sub_items: ?u64,
-                    }),
+                    body_params: *const BodyParameters(
+                        []const u8,
+                        ContentType.Common.text,
+                    ),
+                    context: *Context,
                 ) !StatusCode {
-                    _ = path_params;
-                    return error.OHNOOOO;
+                    context.logger.log(.info).printFmt("{s}", .{body_params.data}).commit();
+                    return .ok;
                 }
             },
             .{ .authenticate = false },
@@ -104,6 +105,14 @@ pub fn main() !void {
     var enviroment: Enviroment = undefined;
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
+
+    var reader = std.Io.Reader.fixed("*/*; q=0.1, application/json; q=0.9");
+    var header: core.net.headers.Accept = undefined;
+
+    try header.parse(&reader, allocator);
+    defer header.deinit(allocator);
+
+    std.debug.print("{f}\n", .{header});
 
     var my_context = Context{
         .logger = undefined,

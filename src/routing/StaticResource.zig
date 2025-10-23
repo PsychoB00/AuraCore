@@ -6,7 +6,7 @@ const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 /// Aura
 const core = @import("../core.zig");
 
-const ContentDisposition = core.net.ContentDisposition;
+const ContentDisposition = core.net.headers.ContentDisposition;
 const CacheControl = core.net.CacheControl;
 
 const ResourceOptions = core.routing.ResourceOptions;
@@ -15,7 +15,7 @@ pub const StaticResourceOptions = struct {
     /// How many bytes can file be
     max_bytes: usize = 65_536,
     /// Should the resource be displayed by browsers or downloaded
-    content_disposition: ContentDisposition = .@"inline",
+    content_disposition: ContentDisposition = ContentDisposition{ .disposition = .@"inline", .filename = null },
     /// How should resource be cached
     cache_control: CacheControl = .no_store,
     /// Should the "last-modified" header be set

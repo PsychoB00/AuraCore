@@ -1,6 +1,6 @@
 .{
     .name = .AuraCore,
-    .version = "0.0.11",
+    .version = "0.0.12",
     .fingerprint = 0x3606e5ccc8fc79b0,
 
     .dependencies = .{
