@@ -113,7 +113,7 @@ pub fn BodyParameters(comptime Structure: type, comptime SupportedContentTypes: 
             const content_type_string = request.getHeaderCommon(.content_type) orelse
                 return ParseError.MissingContentType;
             var content_type_reader = Reader.fixed(content_type_string);
-            try content_type.parse(&content_type_reader, allocator);
+            try content_type.parse(&content_type_reader);
 
             inline for (supported_content_types_array) |supported_content_type| inline_loop: {
                 if (!eqlDeep(content_type, supported_content_type))

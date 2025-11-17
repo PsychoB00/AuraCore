@@ -1,3 +1,12 @@
+/// STD
+const std = @import("std");
+
+const assert = std.debug.assert;
+const isASCIIHex = std.ascii.isHex;
+const isASCIIDigit = std.ascii.isDigit;
+const isASCIIUpper = std.ascii.isUpper;
+
+/// Aura
 pub const getVersion = @import("version.zig").getVersion;
 pub const dome = @embedFile("resources/aura_dome.svg");
 
@@ -9,6 +18,17 @@ pub const utils = struct {
             @ptrFromInt(@intFromPtr(parent) + @offsetOf(ParentType, Name)),
         );
     }
+
+    pub fn charToHex(character: u8) u4 {
+        assert(isASCIIHex(character));
+
+        if (isASCIIDigit(character))
+            return @truncate(character - '0')
+        else if (isASCIIUpper(character))
+            return 10 + @as(u4, @truncate(character - 'A'))
+        else
+            return 10 + @as(u4, @truncate(character - 'a'));
+    }
 };
 
 pub const context = @import("context.zig");
@@ -18,7 +38,6 @@ pub const json = @import("json.zig");
 
 pub const net = struct {
     pub const headers = @import("net/headers.zig");
-    pub const CacheControl = headers.CacheControl;
     pub const LastModified = headers.LastModified;
 
     const method = @import("net/method.zig");

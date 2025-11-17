@@ -1,6 +1,8 @@
 /// STD
 const std = @import("std");
+
 const Allocator = std.mem.Allocator;
+const Writer = std.Io.Writer;
 
 /// Aura
 const core = @import("core.zig");
@@ -106,11 +108,10 @@ pub fn main() !void {
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
 
-    var reader = std.Io.Reader.fixed("*/*; q=0.1, application/json; q=0.9");
-    var header: core.net.headers.Accept = undefined;
+    var reader = std.Io.Reader.fixed("no-store");
+    var header: core.net.headers.CacheControl = undefined;
 
-    try header.parse(&reader, allocator);
-    defer header.deinit(allocator);
+    try header.parse(.request, &reader);
 
     std.debug.print("{f}\n", .{header});
 

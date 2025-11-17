@@ -3,6 +3,7 @@ general:
     - [x] Add versions
 0.0.12:
     - [] Do inline for checking functions etc.
+    - [] Break down trait check functions.
 
 documantation:
     - [x] Add docs generation
@@ -20,6 +21,9 @@ context:
 utils:
     - [x] Add config struct (for passing Allocator, Io, Timezone, env, etc.)
     - [x] Fix namespacing
+
+units:
+    - [] Create units
 
 log:
     - [x] Put Options as last comptime argument
@@ -43,6 +47,8 @@ json:
     - [x] Add error for InvalidValueFormatting
     - [x] Add asserts
     - [x] Make comptime json type validator
+0.0.13:
+    - [] Remove zimdjson dependency, in favor of std
 
 net:
     - headers:
@@ -57,6 +63,15 @@ net:
         [] Add support for multipart
         [x] Add Content-Length
         [x] Add Accept
+    - 0.0.13:
+        [x] Add Server
+        [x] Add User-Agent
+        [x] Add Date
+        [x] Add Connection
+        [x] Rework Cache-Control
+        [x] Add defaults to headers
+        [] Change values of Cache-Control to use Seconds as units
+        [o] Change the getting of header value parameters from single decleration structs to union and struct field names 
 
 routing:
     - [x] Add asserts
