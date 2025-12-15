@@ -6,20 +6,11 @@ const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 /// Aura
 const core = @import("../core.zig");
 
-const ContentDisposition = core.net.headers.ContentDisposition;
-const CacheControl = core.net.headers.CacheControl;
-
 const ResourceOptions = core.routing.ResourceOptions;
 
 pub const StaticResourceOptions = struct {
     /// How many bytes can file be
     max_bytes: usize = 65_536,
-    /// Should the resource be displayed by browsers or downloaded
-    content_disposition: ContentDisposition = ContentDisposition{ .disposition = .@"inline" },
-    /// How should resource be cached
-    cache_control: CacheControl = .{ .scope_directive = .no_store },
-    /// Should the "last-modified" header be set
-    last_modified: bool = false,
 };
 
 /// Structure for binding `FilePath`, `SROptions` and `Options` together to define Static file resource

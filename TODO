@@ -36,6 +36,8 @@ log:
 0.0.5:
     - [x] Find MaxLogLength for ConsoleLogProcessor buffer
     - [x] Pass Environment to Logger and ConsoleLogProcessor
+0.0.14:
+    - [] Rework format parsing to Io
 
 jwt:
     - [x] Fix namespacing
@@ -52,26 +54,7 @@ json:
 
 net:
     - headers:
-        [x] Add Host
-    - 0.0.12:
-        [x] Add Content-Type
-        [] Add all MIME type to Content-Type
-        [o] Rework older header to the new format
-        [x] Add isHeader
-        [x] Rework Content-Disposition
-        [] Change Content-Disposition.filename.encoded.language to actual language implementation
-        [] Add support for multipart
-        [x] Add Content-Length
-        [x] Add Accept
-    - 0.0.13:
-        [x] Add Server
-        [x] Add User-Agent
-        [x] Add Date
-        [x] Add Connection
-        [x] Rework Cache-Control
-        [x] Add defaults to headers
-        [] Change values of Cache-Control to use Seconds as units
-        [o] Change the getting of header value parameters from single decleration structs to union and struct field names 
+        [o] Headers rework
 
 routing:
     - [x] Add asserts
@@ -108,6 +91,8 @@ routing:
     - 0.0.12:
         - [o] Fix StaticResource for headers rework
         - [o] Fix APIResource for headers rework
+    - 0.0.14:
+        - [] Rework PathParameter, QueryParameters and BodyParameters to use Io
     - OnRequestProcessor:
         - [x] Fix the request invalidation
         - [x] Finish all the functions for errorous behaviour

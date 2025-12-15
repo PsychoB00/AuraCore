@@ -15,11 +15,6 @@ const bufPrint = std.fmt.bufPrint;
 /// Aura
 const core = @import("../core.zig");
 
-const ContentLength = core.net.headers.ContentLength;
-const ContentDisposition = core.net.headers.ContentDisposition;
-const CacheControl = core.net.headers.CacheControl;
-const LastModified = core.net.LastModified;
-
 const ResourceOptions = core.routing.ResourceOptions;
 
 const fieldPtr = core.utils.fieldPtr;
@@ -29,6 +24,11 @@ const isResourceParameters = core.routing.isResourceParameters;
 const methodToLower = core.net.methodToLower;
 
 /// Third Party
+const zeit = @import("zeit");
+
+const Instatnt = zeit.Instant;
+const Time = zeit.Time;
+
 const zap = @import("zap");
 
 const ErrorStrategy = zap.Endpoint.ErrorStrategy;
@@ -254,31 +254,8 @@ pub fn StaticRoute(
         }
 
         /// Sets appropriate headers for StaticResource
-        fn _setStaticResourceHeaders(body_length: usize, request: *const Request) !void {
-            var content_length_buffer: [ContentLength.max_format_len]u8 = undefined;
-            const content_length_header: ContentLength = .{
-                .length = body_length,
-            };
-            const content_length = try bufPrint(&content_length_buffer, "{f}", .{content_length_header});
-
-            var content_disposition_buffer: [ContentDisposition.max_format_len]u8 = undefined;
-            const content_disposition = try bufPrint(&content_disposition_buffer, "{f}", .{ResourceType.sr_options.content_disposition});
-
-            var cache_control_buffer: [CacheControl.max_format_len]u8 = undefined;
-            var cache_control_writer = Writer.fixed(&cache_control_buffer);
-            try CacheControl.formatValidate(ResourceType.sr_options.cache_control, .response, &cache_control_writer);
-
-            try request.setContentTypeFromFilename(ResourceType.file_path);
-            try request.setHeader(ContentLength.header_name, content_length);
-            try request.setHeader(ContentDisposition.header_name, content_disposition);
-            try request.setHeader(CacheControl.header_name, cache_control_writer.buffered());
-            try cache_control_writer.flush();
-            if (ResourceType.sr_options.last_modified) {
-                const stat = try cwd().statFile(ResourceType.file_path);
-                var buffer: [29]u8 = undefined;
-                try LastModified.toString(stat, &buffer);
-                try request.setHeader("last-modified", &buffer);
-            }
+        fn _setStaticResourceHeaders(_: usize, _: *const Request) !void {
+            // REWORK
         }
 
         /// Calls API Method

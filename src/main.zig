@@ -20,7 +20,6 @@ const APIResource = core.routing.APIResource;
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
 const BodyParameters = core.routing.BodyParameters;
-const ContentType = core.net.headers.ContentType;
 
 /// Third Party
 const zap = @import("zap");
@@ -65,9 +64,7 @@ const ResourceTree = struct {
     pub const img = struct {
         pub const dome = StaticResource(
             "zig-out/resources/aura_dome.svg",
-            .{
-                .last_modified = true,
-            },
+            .{},
             .{ .authenticate = false },
         );
     };
@@ -75,13 +72,9 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    body_params: *const BodyParameters(
-                        []const u8,
-                        ContentType.Common.text,
-                    ),
                     context: *Context,
                 ) !StatusCode {
-                    context.logger.log(.info).printFmt("{s}", .{body_params.data}).commit();
+                    context.logger.log(.info).print("Hello").commit();
                     return .ok;
                 }
             },
@@ -107,13 +100,6 @@ pub fn main() !void {
     var enviroment: Enviroment = undefined;
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
-
-    var reader = std.Io.Reader.fixed("no-store");
-    var header: core.net.headers.CacheControl = undefined;
-
-    try header.parse(.request, &reader);
-
-    std.debug.print("{f}\n", .{header});
 
     var my_context = Context{
         .logger = undefined,
