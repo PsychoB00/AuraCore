@@ -3,7 +3,7 @@ general:
     - [x] Add versions
 0.0.12:
     - [] Do inline for checking functions etc.
-    - [] Break down trait check functions.
+    - [o] Break down trait check functions.
 
 documantation:
     - [x] Add docs generation
@@ -37,7 +37,10 @@ log:
     - [x] Find MaxLogLength for ConsoleLogProcessor buffer
     - [x] Pass Environment to Logger and ConsoleLogProcessor
 0.0.14:
-    - [] Rework format parsing to Io
+    - [x] Rework format parsing to Io
+0.0.15:
+    - [x] Rework trait checks
+    - [x] Add fmt checks to LogFmtOptions
 
 jwt:
     - [x] Fix namespacing

@@ -4,6 +4,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const atomic = std.atomic.Value;
 const Futex = std.Thread.Futex;
+const Writer = std.Io.Writer;
+const Reader = std.Io.Reader;
 const SourceLocation = std.builtin.SourceLocation;
 
 const assert = std.debug.assert;
@@ -12,6 +14,8 @@ const comptimePrint = std.fmt.comptimePrint;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const copyForwards = std.mem.copyForwards;
 const bufPrint = std.fmt.bufPrint;
+const isLower = std.ascii.isLower;
+const toUpper = std.ascii.toUpper;
 
 /// Aura
 const core = @import("core.zig");
@@ -24,6 +28,7 @@ const zeit = @import("zeit");
 const TimeZone = zeit.TimeZone;
 const Instant = zeit.Instant;
 
+/// Code
 pub const State = enum(u8) {
     empty,
     reserved,
@@ -45,9 +50,9 @@ pub const LoggerOptions = struct {
 };
 
 pub const LogOptions = struct {
-    /// How long can Log scope string be?
+    /// When formated, how many bytes can Log scope string be?
     scope_len: usize = 64,
-    /// When formated, how long can a Log message string be?
+    /// When formated, how many bytes can Log message string be?
     message_len: usize = 1_024,
 };
 
@@ -81,6 +86,94 @@ pub const LogFmtOptions = struct {
     /// - '%l' is `line`
     /// - '%c' is `column`
     source_location_fmt: []const u8 = " in file '%F' line %l",
+
+    pub fn isValid(self: LogFmtOptions) !void {
+        try _hasFmtValidPlaceholdersCaseExclusive("ltcms", self.fmt);
+        try _hasFmtValidPlaceholdersCaseExclusive("l", self.level_fmt);
+        try _hasFmtValidPlaceholders("aAbBcCdDeFfGgHhIjklMmmOPpRrSsTtUuVWwXxYyZz%", self.scope_fmt);
+        try _hasFmtValidPlaceholders("s", self.scope_fmt);
+        try _hasFmtValidPlaceholders("m", self.message_fmt);
+        try _hasFmtValidPlaceholders("mFflc", self.source_location_fmt);
+    }
+
+    /// Checks if `fmt` has at least one placeholder defined in `valid_placeholders` and placeholders aren't duplicit
+    fn _hasFmtValidPlaceholders(comptime valid_placeholders: []const u8, fmt: []const u8) !void {
+        var placeholder_check_array = [1]bool{false} ** valid_placeholders.len;
+
+        if (fmt.len == 0)
+            return error.FmtTooShort;
+
+        var validate_placeholder: bool = false;
+
+        for (fmt) |character| fmt_loop: {
+            if (validate_placeholder) {
+                inline for (valid_placeholders, 0..) |placeholder, index| placeholder_loop: {
+                    if (character != placeholder)
+                        break :placeholder_loop;
+
+                    if (placeholder_check_array[index])
+                        return error.DuplicatePlaceholder;
+
+                    validate_placeholder = false;
+                    placeholder_check_array[index] = true;
+                    break :fmt_loop;
+                }
+
+                return error.InvalidPlaceholder;
+            }
+
+            if (character == '%')
+                validate_placeholder = true;
+        }
+
+        inline for (placeholder_check_array) |check| {
+            if (check)
+                return;
+        }
+
+        return error.MissingPlaceholder;
+    }
+
+    /// Checks if `fmt` has at least one placeholder (upper or lower) defined in `valid_placeholders` and placeholders aren't duplicit
+    fn _hasFmtValidPlaceholdersCaseExclusive(comptime valid_placeholders: []const u8, fmt: []const u8) !void {
+        var placeholder_check_array = [1]bool{false} ** valid_placeholders.len;
+
+        if (fmt.len == 0)
+            return error.FmtTooShort;
+
+        var validate_placeholder: bool = false;
+
+        for (fmt) |character| fmt_loop: {
+            if (validate_placeholder) {
+                inline for (valid_placeholders, 0..) |placeholder, index| placeholder_loop: {
+                    comptime if (!isLower(placeholder))
+                        @compileError("Valid placeholder must be lowercase");
+
+                    if (character != placeholder and character != comptime toUpper(placeholder))
+                        break :placeholder_loop;
+
+                    if (placeholder_check_array[index])
+                        return error.DuplicatePlaceholder;
+
+                    validate_placeholder = false;
+                    placeholder_check_array[index] = true;
+                    break :fmt_loop;
+                }
+
+                return error.InvalidPlaceholder;
+            }
+
+            if (character == '%')
+                validate_placeholder = true;
+        }
+
+        inline for (placeholder_check_array) |check| {
+            if (check)
+                return;
+        }
+
+        return error.MissingPlaceholder;
+    }
 };
 
 /// Multi-thread safe, statically sized Logger
@@ -89,8 +182,7 @@ pub const LogFmtOptions = struct {
 ///   after, otherwise the Log will be pernamently reserved in `log_pool`, exhausting it.
 /// - Requesting Log when `log_pool` has been exhausted will lead to blocking of requesting thread. Ensure that `Options.log_pool_size` is set
 ///   appropriately to the amount of threads utilizing this Logger, frequency of Log requests and compexity of Log processing.
-/// - LogProcessor handles the processing of collected Logs. It must be a type which contains method `init` and methode for
-///   Log processing `processLog`.
+/// - `LogProcessor` handles the processing of collected Logs. It must fullfill the 'isLogProcessor' trait check.
 pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime Options: LoggerOptions) type {
     // `LogType` validation
     if (!isLog(LogType))
@@ -183,6 +275,8 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
                 Futex.wait(&self.uncollected, 0);
 
                 for (&self.log_pool.?) |*log_request| {
+                    if (self.uncollected.load(.acquire) == 0) break;
+
                     _ = @cmpxchgWeak(
                         State,
                         &log_request.state.raw,
@@ -270,12 +364,47 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
     };
 }
 
+/// Trait check for Logger
+///
+/// - `Type` must be struct
+/// - `Type` must have decleration for self named "LoggerType"
+///     - `LoggerType` must be decleration of type which is the same as `Type`
+/// - `Type` must have decleration for type of Log which it uses, named "log_t"
+///     - `log_t` must be decleration of a type
+///     - `log_t` must fulfill trait check `isLog`
+/// - `Type` must have decleration for type of LogProcessor which it uses, named "log_processor_t"
+///     - `log_processor_t` must be decleration of a type
+///     - `log_processor_t` must fulfill trait check `isLogProcessor`
+/// - `Type` must have decleration of its options named "options"
+///     - `options` must be decleration of LoggerOptions
+/// - `Type` must be able to generate `Type` using its declerations
 pub fn isLogger(comptime Type: type) bool {
-    return @hasDecl(Type, "LoggerType") and @TypeOf(Type.LoggerType) == type and Type.LoggerType == Type and
-        @hasDecl(Type, "log_t") and @TypeOf(Type.log_t) == type and isLog(Type.log_t) and
-        @hasDecl(Type, "log_processor_t") and @TypeOf(Type.log_processor_t) == type and isLogProcessor(Type.log_processor_t) and
-        @hasDecl(Type, "options") and @TypeOf(Type.options) == LoggerOptions and
+    const is_struct = @typeInfo(Type) == .@"struct";
+
+    const has_logger_type =
+        @hasDecl(Type, "LoggerType") and
+        @TypeOf(Type.LoggerType) == type and
+        Type.LoggerType == Type;
+
+    const has_log_type =
+        @hasDecl(Type, "log_t") and
+        @TypeOf(Type.log_t) == type and
+        isLog(Type.log_t);
+
+    const has_log_processor_type =
+        @hasDecl(Type, "log_processor_t") and
+        @TypeOf(Type.log_processor_t) == type and
+        isLogProcessor(Type.log_processor_t);
+
+    const has_options =
+        @hasDecl(Type, "options") and
+        @TypeOf(Type.options) == LoggerOptions;
+
+    const can_generate_self =
+        has_log_type and has_options and has_log_processor_type and
         Logger(Type.log_t, Type.log_processor_t, Type.options) == Type;
+
+    return is_struct and has_logger_type and has_log_type and has_log_processor_type and has_options and can_generate_self;
 }
 
 /// Statically sized Log
@@ -476,9 +605,31 @@ pub fn Log(comptime Options: LogOptions) type {
     };
 }
 
+/// Trait check for Log
+///
+/// - `Type` must be struct
+/// - `Type` must have decleration for self named "LogType"
+///     - `LogType` must be decleration of type which is the same as `Type`
+/// - `Type` must have decleration of its options named "options"
+///     - `options` must be decleration of LogOptions
+/// - `Type` must be able to generate `Type` using its declerations
 pub fn isLog(comptime Type: type) bool {
-    return @hasDecl(Type, "LogType") and @TypeOf(Type.LogType) == type and Type.LogType == Type and
-        @hasDecl(Type, "options") and @TypeOf(Type.options) == LogOptions and Log(Type.options) == Type;
+    const is_struct = @typeInfo(Type) == .@"struct";
+
+    const has_log_type =
+        @hasDecl(Type, "LogType") and
+        @TypeOf(Type.LogType) == type and
+        Type.LogType == Type;
+
+    const has_options =
+        @hasDecl(Type, "options") and
+        @TypeOf(Type.options) == LogOptions;
+
+    const can_generate_self =
+        has_options and
+        Log(Type.options) == Type;
+
+    return is_struct and has_log_type and has_options and can_generate_self;
 }
 
 /// Formating functions for Log
@@ -487,26 +638,23 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
     if (!isLog(LogType))
         @compileError("`LogType` must be Log");
 
+    // `Options` validation
+    Options.isValid() catch @compileError("`Options` must be valid");
+
     return struct {
         /// Writes `Log.level` to `writer` based on `Options.level_fmt`
-        pub fn levelFmt(arg: *const LogType, writer: *std.Io.Writer) !void {
+        pub fn levelFmt(arg: *const LogType, writer: *Writer) !void {
             assert(arg.*.level != null);
 
-            const delimiter_index = comptime indexOfScalarPos(
-                u8,
-                Options.level_fmt,
-                0,
-                '%',
-            ) orelse
-                @compileError("No '%' in `Options.level_fmt`");
-            comptime if (delimiter_index + 1 >= Options.level_fmt.len)
-                @compileError("`Options.level_fmt` doesn't contain placeholder");
-            const placeholder = Options.level_fmt[delimiter_index + 1];
+            comptime var reader = Reader.fixed(Options.level_fmt);
 
-            if (comptime delimiter_index > 0)
-                try writer.writeAll(Options.level_fmt[0..delimiter_index]);
+            const level_prefix = comptime try reader.takeDelimiterExclusive('%');
+            if (comptime level_prefix.len > 0)
+                try writer.writeAll(level_prefix);
 
-            switch (placeholder) {
+            const placeholder = comptime try reader.take(2);
+
+            switch (placeholder[1]) {
                 inline 'l' => try writer.writeAll(@tagName(arg.*.level.?)),
                 inline 'L' => {
                     switch (arg.*.level.?) {
@@ -517,15 +665,16 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
                         .fatal => try writer.writeAll("FATAL"),
                     }
                 },
-                inline else => @compileError("`Options.level_fmt` doesn't contain valid placeholder"),
+                inline else => unreachable,
             }
 
-            if (comptime delimiter_index + 2 < Options.level_fmt.len)
-                try writer.writeAll(Options.level_fmt[(delimiter_index + 2)..]);
+            const level_postfix = comptime try reader.take(reader.bufferedLen());
+            if (comptime level_postfix.len > 0)
+                try writer.writeAll(level_postfix);
         }
 
         /// Writes `Log.instant` converted to time based on `timezone`, to `writer` based on `Options.time_fmt`
-        pub fn timeFmt(arg: *const LogType, writer: *std.Io.Writer, timezone: *const TimeZone) !void {
+        pub fn timeFmt(arg: *const LogType, writer: *Writer, timezone: *const TimeZone) !void {
             assert(arg.*.instant != null);
 
             const time = arg.*.instant.?.in(timezone).time();
@@ -533,118 +682,87 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
         }
 
         /// Writes `Log.context` to `writer` based on `Options.scope_fmt`
-        pub fn scopeFmt(arg: *const LogType, writer: *std.Io.Writer) !void {
+        pub fn scopeFmt(arg: *const LogType, writer: *Writer) !void {
             assert(arg.*.context != null);
             assert(arg.*.context_len != null);
 
-            const delimiter_index = comptime indexOfScalarPos(
-                u8,
-                Options.scope_fmt,
-                0,
-                '%',
-            ) orelse
-                @compileError("No '%' in `Options.scope_fmt`");
-            comptime if (delimiter_index + 1 >= Options.scope_fmt.len)
-                @compileError("`Options.scope_fmt` doesn't contain placeholder");
-            const placeholder = Options.scope_fmt[delimiter_index + 1];
+            comptime var reader = Reader.fixed(Options.scope_fmt);
 
-            if (comptime delimiter_index > 0)
-                try writer.writeAll(Options.scope_fmt[0..delimiter_index]);
+            const scope_prefix = comptime try reader.takeDelimiterExclusive('%');
+            if (comptime scope_prefix.len > 0)
+                try writer.writeAll(scope_prefix);
 
-            if (comptime placeholder == 's')
-                try writer.writeAll(arg.*.context.?[0..arg.*.context_len.?])
-            else
-                @compileError("`Options.scope_fmt` doesn't contain valid placeholder");
+            _ = comptime try reader.take(2);
 
-            if (comptime delimiter_index + 2 < Options.scope_fmt.len)
-                try writer.writeAll(Options.scope_fmt[(delimiter_index + 2)..]);
+            try writer.writeAll(arg.*.context.?[0..arg.*.context_len.?]);
+
+            const scope_postfix = comptime try reader.take(reader.bufferedLen());
+            if (comptime scope_postfix.len > 0)
+                try writer.writeAll(scope_postfix);
         }
 
         /// Writes `Log.message` to `writer` based on `Options.message_fmt`
-        pub fn messageFmt(arg: *const LogType, writer: *std.Io.Writer) !void {
+        pub fn messageFmt(arg: *const LogType, writer: *Writer) !void {
             assert(arg.*.message != null);
             assert(arg.*.message_len != null);
 
-            const delimiter_index = comptime indexOfScalarPos(
-                u8,
-                Options.message_fmt,
-                0,
-                '%',
-            ) orelse
-                @compileError("No '%' in `Options.message_fmt`");
-            comptime if (delimiter_index + 1 >= Options.scope_fmt.len)
-                @compileError("`Options.message_fmt` doesn't contain placeholder");
-            const placeholder = Options.message_fmt[delimiter_index + 1];
+            comptime var reader = Reader.fixed(Options.message_fmt);
 
-            if (comptime delimiter_index > 0)
-                try writer.writeAll(Options.message_fmt[0..delimiter_index]);
+            const message_prefix = comptime try reader.takeDelimiterExclusive('%');
+            if (comptime message_prefix.len > 0)
+                try writer.writeAll(message_prefix);
 
-            if (comptime placeholder == 'm')
-                try writer.writeAll(arg.*.message.?[0..arg.*.message_len.?])
-            else
-                @compileError("`Options.message_fmt` doesn't contain valid placeholder");
+            _ = comptime try reader.take(2);
 
-            if (comptime delimiter_index + 2 < Options.message_fmt.len)
-                try writer.writeAll(Options.message_fmt[(delimiter_index + 2)..]);
+            try writer.writeAll(arg.*.message.?[0..arg.*.message_len.?]);
+
+            const message_postfix = comptime try reader.take(reader.bufferedLen());
+            if (comptime message_postfix.len > 0)
+                try writer.writeAll(message_postfix);
         }
 
         /// Writes `Log.source_location` to `writer` based on `Options.source_location_fmt`
-        pub fn sourceLocationFmt(arg: *const LogType, writer: *std.Io.Writer) !void {
+        pub fn sourceLocationFmt(arg: *const LogType, writer: *Writer) !void {
             assert(arg.*.source_location != null);
-            comptime var origin_point: usize = 0;
+
+            comptime var reader = Reader.fixed(Options.source_location_fmt);
 
             inline while (true) {
-                const delimiter_index: usize = comptime indexOfScalarPos(
-                    u8,
-                    Options.source_location_fmt,
-                    origin_point,
-                    '%',
-                ) orelse break;
-                comptime if (delimiter_index + 1 >= Options.source_location_fmt.len)
-                    @compileError("`Options.source_location_fmt` doesn't contain one placeholder");
-                const placeholder = Options.source_location_fmt[delimiter_index + 1];
+                const source_location_segment = comptime reader.takeDelimiterExclusive('%') catch break;
+                if (source_location_segment.len > 0)
+                    try writer.writeAll(source_location_segment);
 
-                if (comptime delimiter_index > origin_point)
-                    try writer.writeAll(Options.source_location_fmt[origin_point..delimiter_index]);
+                comptime if (reader.bufferedLen() == 0)
+                    break;
 
-                switch (placeholder) {
+                const placeholder = comptime try reader.take(2);
+
+                switch (placeholder[1]) {
                     inline 'm' => try writer.writeAll(arg.*.source_location.?.module),
                     inline 'F' => try writer.writeAll(arg.*.source_location.?.file),
                     inline 'f' => try writer.writeAll(arg.*.source_location.?.fn_name),
-                    inline 'l' => try writer.print("{}", .{arg.*.source_location.?.line}),
-                    inline 'c' => try writer.print("{}", .{arg.*.source_location.?.column}),
-                    inline else => @compileError("`Options.source_location_fmt` contains invalid placeholder"),
+                    inline 'l' => try writer.print("{d}", .{arg.*.source_location.?.line}),
+                    inline 'c' => try writer.print("{d}", .{arg.*.source_location.?.column}),
+                    inline else => unreachable,
                 }
-
-                origin_point = delimiter_index + 2;
             }
-
-            comptime if (origin_point == 0)
-                @compileError("No '%' in `Options.source_location_fmt`");
-
-            if (comptime origin_point < Options.source_location_fmt.len)
-                try writer.writeAll(Options.source_location_fmt[origin_point..]);
         }
 
         /// Writes formated Log to `writer` based on `Options.fmt`
-        pub fn fmt(arg: *const LogType, writer: *std.Io.Writer, timezone: *const TimeZone) !void {
-            comptime var origin_point: usize = 0;
+        pub fn fmt(arg: *const LogType, writer: *Writer, timezone: *const TimeZone) !void {
+            comptime var reader = Reader.fixed(Options.fmt);
 
             inline while (true) {
-                const delimiter_index: usize = comptime indexOfScalarPos(
-                    u8,
-                    Options.fmt,
-                    origin_point,
-                    '%',
-                ) orelse break;
-                comptime if (delimiter_index + 1 >= Options.fmt.len)
-                    @compileError("`Options.fmt` doesn't contain one placeholder");
-                const placeholder = Options.fmt[delimiter_index + 1];
+                const fmt_segment = comptime reader.takeDelimiterExclusive('%') catch break;
+                if (fmt_segment.len > 0)
+                    try writer.writeAll(fmt_segment);
 
-                if (comptime delimiter_index > origin_point)
-                    try writer.writeAll(Options.fmt[origin_point..delimiter_index]);
+                comptime if (reader.bufferedLen() == 0)
+                    break;
 
-                switch (placeholder) {
+                const placeholder = comptime try reader.take(2);
+
+                switch (placeholder[1]) {
                     inline 'l' => if (arg.level != null) try levelFmt(arg, writer),
                     inline 'L' => if (arg.level != null) try levelFmt(arg, writer) else try writer.writeAll("<NO_LEVEL>"),
                     inline 't' => if (arg.instant != null) try timeFmt(arg, writer, timezone),
@@ -655,17 +773,9 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
                     inline 'M' => if (arg.message != null) try messageFmt(arg, writer) else try writer.writeAll("<NO_MESSAGE>"),
                     inline 's' => if (arg.source_location != null) try sourceLocationFmt(arg, writer),
                     inline 'S' => if (arg.source_location != null) try sourceLocationFmt(arg, writer) else try writer.writeAll("<NO_SOURCE>"),
-                    inline else => @compileError("`Options.fmt` contains invalid placeholder"),
+                    inline else => unreachable,
                 }
-
-                origin_point = delimiter_index + 2;
             }
-
-            comptime if (origin_point == 0)
-                @compileError("No '%' in `Options.fmt`");
-
-            if (comptime origin_point < Options.fmt.len)
-                try writer.writeAll(Options.fmt[origin_point..]);
         }
     };
 }
@@ -738,8 +848,31 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
     };
 }
 
+/// Trait check for LogProcessor
+///
+/// - `Type` must be a struct
+/// - `Type` must have decleration for type of Log which it uses, named "log_t"
+///     - `log_t` must be decleration of a type
+///     - `log_t` must fulfill trait check `isLog`
+/// - `Type` must have method decleration named "init"
+///     - `init` must have function signiture of fn (*Type, *Enviroment) void
+/// - `Type` must have method decleration named "processLog"
+///     - `processLog` must have function signiture of fn (*Type, *const Type.log_t) void
 pub fn isLogProcessor(comptime Type: type) bool {
-    return @hasDecl(Type, "log_t") and @TypeOf(Type.log_t) == type and isLog(Type.log_t) and
-        hasMethod(Type, "init") and @TypeOf(Type.init) == fn (*Type, *Enviroment) void and
-        hasMethod(Type, "processLog") and @TypeOf(Type.processLog) == fn (*Type, *const Type.log_t) void;
+    const is_struct = @typeInfo(Type) == .@"struct";
+
+    const has_log_type =
+        @hasDecl(Type, "log_t") and
+        @TypeOf(Type.log_t) == type and
+        isLog(Type.log_t);
+
+    const has_init =
+        hasMethod(Type, "init") and
+        @TypeOf(Type.init) == fn (*Type, *Enviroment) void;
+
+    const has_process_log =
+        hasMethod(Type, "processLog") and
+        @TypeOf(Type.processLog) == fn (*Type, *const Type.log_t) void;
+
+    return is_struct and has_log_type and has_init and has_process_log;
 }

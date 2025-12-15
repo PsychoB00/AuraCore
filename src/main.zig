@@ -74,7 +74,7 @@ const ResourceTree = struct {
                 pub fn get(
                     context: *Context,
                 ) !StatusCode {
-                    context.logger.log(.info).print("Hello").commit();
+                    context.logger.log(.info).scope("Here").time().print("Hello").src(@src()).commit();
                     return .ok;
                 }
             },
