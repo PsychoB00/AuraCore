@@ -1,12 +1,10 @@
 general:
     - DONT FORGET TO INCR THE VERSIONS
-    - [x] Add versions
 0.0.12:
     - [] Do inline for checking functions etc.
     - [o] Break down trait check functions.
 
 documantation:
-    - [x] Add docs generation
     - [] Create docs for json standard
     - [] Create some docs for establishing some standards (routing, URI, API, time formating, units, etc.)
 
@@ -14,7 +12,6 @@ testing:
     - [] Add at least some basic testing
 
 context:
-    - [x] Add tools for Context checking
 0.0.6:
     - [x] Move Environment to context.zig
 
@@ -26,13 +23,6 @@ units:
     - [] Create units
 
 log:
-    - [x] Put Options as last comptime argument
-    - [x] Fix namespacing
-    - [x] Add comptime validation
-    - [x] Check if ConsoleLogProcessor rework for zig 0.15.1 is needed
-    - [x] Check for code formating issues (guard conditions, std namespace reduction)
-    - [x] Fix LogFmt and the bunch of unreachables
-    - [x] Add non-comptime scope to Log
 0.0.5:
     - [x] Find MaxLogLength for ConsoleLogProcessor buffer
     - [x] Pass Environment to Logger and ConsoleLogProcessor
@@ -42,16 +32,7 @@ log:
     - [x] Rework trait checks
     - [x] Add fmt checks to LogFmtOptions
 
-jwt:
-    - [x] Fix namespacing
-    - [x] Fix long lines
-
 json:
-    - [x] Add comments
-    - [x] Add enum support
-    - [x] Add error for InvalidValueFormatting
-    - [x] Add asserts
-    - [x] Make comptime json type validator
 0.0.13:
     - [] Remove zimdjson dependency, in favor of std
 
@@ -60,31 +41,13 @@ net:
         [o] Headers rework
 
 routing:
-    - [x] Add asserts
-    - [x] Fix namespacing
-    - ResourceTree:
-        - [x] Rework it to individual resource Options
-        - [x] Fix comptime validation, too much nesting, try using guard conditions etc.
-        - [x] Fix namespacing
     - Router:
-        - [x] Rework for ResourceTree rework
-        - [x] Fix for StaticResource rework
-        - [o] Add unauthorized function
-        - [x] Add OnRequestProcessor
-        - [x] Reduce nesting and fix namespacing
     - 0.0.7:
         - [x] Fix the bad/unexpresive error handeling
         - [x] Change the passing of allocator in *const Allocator to Allocator
     - 0.0.10:
         - [x] Remove Request parameter from StaticRoute
     - resources:
-        - [x] Change StaticResource data from comptime embeded file to runtime read file
-        - [x] Fix StaticResource namespacing
-        - [x] Add proper APIResource for ResourceTree rework
-        - [x] Add default value optionality to QueryParameters
-        - [x] Add comptime MIME types to BodyParameters
-        - [x] Fix comptime validation of BodyParameters and QueryParameters
-        - [x] Fix APIResource namespacing
     - 0.0.9:
         - [x] Add Cache-Control to StaticResource
         - [x] Add other nessesary headers to StaticResource
@@ -99,9 +62,7 @@ routing:
     - 0.0.15:
         - [x] Rework isPathParameters
         - [x] Rework PathParameters to use Io and does utf8 decoding
-    - OnRequestProcessor:
-        - [x] Fix the request invalidation
-        - [x] Finish all the functions for errorous behaviour
-        - [x] Change name from RouteProcessor to OnRequestProcessor
+    - 0.0.16:
+        - [x] Rework QueryParameters to use Io and does utf8 decoding
     - Respose:
         - [] Create Response struct

@@ -33,6 +33,7 @@ pub fn decodeUriStringtoUTF8(string: []u8) ![]const u8 {
 
                 if (index == string.len - 1 or string[index + 1] != '%') {
                     _ = switch (current_codepoint_count) {
+                        1 => @as(u21, current_codepoints[0]),
                         2 => utf8Decode2(current_codepoints[0..2].*),
                         3 => utf8Decode3(current_codepoints[0..3].*),
                         4 => utf8Decode4(current_codepoints[0..4].*),

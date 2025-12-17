@@ -5,7 +5,6 @@ const Allocator = std.mem.Allocator;
 const Reader = std.Io.Reader;
 
 const comptimePrint = std.fmt.comptimePrint;
-const indexOfScalarPos = std.mem.indexOfScalarPos;
 const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 const eql = std.mem.eql;
 const parseInt = std.fmt.parseInt;
@@ -32,7 +31,7 @@ const Time = zeit.Time;
 /// - First field in `Structure` must have the same name as the APIResource using it.
 /// - Every parameter can be optional. If any parameter is optional, subsequent parameters must be optional as well.
 /// - Parameters can be typed as unsigned integer, []const u8 or zeit.Time(ISO 8601).
-/// - If a parameter is typed as []const u8, it will be in utf-8 encoding
+/// - If a parameter is typed as []const u8, it will be in utf-8 encoded.
 /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
 ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
 ///   the lifetime of the memory to lifetime of the zap.Request.
@@ -111,17 +110,16 @@ pub fn PathParameters(comptime Structure: type) type {
 
             // Assign to fields of `dest.data`
             inline for (@typeInfo(Structure).@"struct".fields) |field| field_loop: {
-                const info = @typeInfo(field.type);
                 const field_type =
-                    if (info == .optional)
-                        info.optional.child
+                    if (structure_info == .optional)
+                        structure_info.optional.child
                     else
                         field.type;
                 const field_ptr = fieldPtr(Structure, field.name, &dest.data);
 
                 if (reader.bufferedLen() == 0) {
                     // Reader is empty, handle optional fields
-                    if (info != .optional)
+                    if (structure_info != .optional)
                         return error.MissingParameter;
 
                     field_ptr.* = null;

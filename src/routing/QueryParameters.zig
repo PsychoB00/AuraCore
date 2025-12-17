@@ -2,9 +2,11 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Reader = std.Io.Reader;
 
 const indexOf = std.mem.indexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
+const eql = std.mem.eql;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const parseInt = std.fmt.parseInt;
 const parseFloat = std.fmt.parseFloat;
@@ -16,6 +18,7 @@ const core = @import("../core.zig");
 const ParametersType = core.routing.ParametersType;
 
 const fieldPtr = core.utils.fieldPtr;
+const decodeUriStringtoUTF8 = core.net.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
 
 /// Third Party
@@ -25,20 +28,12 @@ const Request = zap.Request;
 const zeit = @import("zeit");
 const Time = zeit.Time;
 
-pub const ParseError = error{
-    MissingQuery,
-    MissingParameter,
-    MissingValue,
-    InvalidBool,
-    InvalidEnum,
-    ExcessQuery,
-};
-
 /// Parameters defining the Resource's filters
 ///
-/// - Fields of `Structure` represent individual parameters, they are order insensitive.
+/// - Fields of `Structure` represent individual parameters, they are order insensitive and case sensitive.
 /// - Every parameter can be optional.
-/// - Parameters can be typed as bool, integer, float, enum, string or zeit.Time(ISO 8601).
+/// - Parameters can be typed as bool, integer, float, enum, []const u8 or zeit.Time(ISO 8601).
+/// - If a parameter is typed as []const u8, it will be in utf-8 encoded.
 /// - Parameters can have default values, if parameter is optional and no default value is provided,
 ///   null will be assigned.
 /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
@@ -92,119 +87,140 @@ pub fn QueryParameters(comptime Structure: type) type {
 
         data: Structure,
 
-        /// Parse QueryParameters from `request`
         pub fn parse(allocator: Allocator, request: *const Request, dest: *QueryParametersType) !void {
             if (comptime has_endorced_parameters)
                 if (request.query == null)
-                    return ParseError.MissingQuery;
+                    return error.MissingQuery;
 
-            var parsed_params_count: usize = 0;
-            const next_param_count =
-                if (request.query == null)
-                    0
-                else blk: {
-                    var count: usize = 0;
+            var assigned_fields = [1]bool{false} ** structure_info.@"struct".fields.len;
+            var reader = Reader.fixed(request.query orelse "");
 
-                    for (request.query.?) |char| {
-                        if (char == '&')
-                            count += 1;
-                    }
-
-                    break :blk count;
+            reader_loop: while (true) {
+                // Validating parameter name
+                const parameter_name_value = reader.takeDelimiterInclusive('=') catch |err| switch (err) {
+                    error.EndOfStream => return error.MissingNameValueDelimiter,
+                    else => return err,
                 };
 
-            inline for (structure_info.@"struct".fields) |field| inline_loop: {
-                const field_info = @typeInfo(field.type);
-                const field_ptr = fieldPtr(Structure, field.name, &dest.data);
+                var is_valid_name: bool = false;
 
-                if (request.query == null) {
-                    if (comptime field_info != .optional)
-                        unreachable;
+                inline for (structure_info.@"struct".fields, 0..) |field, field_index| field_loop: {
+                    if (!eql(u8, parameter_name_value, field.name ++ "="))
+                        break :field_loop;
 
-                    field_ptr.* = null;
-                    break :inline_loop;
-                }
+                    if (assigned_fields[field_index])
+                        return error.DuplicateParameters;
 
-                const param_name = field.name ++ "=";
-                const field_type =
-                    if (field_info == .optional)
-                        field_info.optional.child
-                    else
-                        field.type;
-
-                // Get value of parameter
-                var value_start_index = indexOf(u8, request.query.?, param_name) orelse {
-                    if (comptime field.default_value_ptr == null) {
-                        if (comptime field_info == .optional) {
-                            field_ptr.* = null;
-                            break :inline_loop;
-                        }
-                        return ParseError.MissingParameter;
-                    }
-
-                    field_ptr.* = field.defaultValue().?;
-                    break :inline_loop;
-                };
-                value_start_index += param_name.len;
-
-                const parameter_end_index = indexOfScalarPos(
-                    u8,
-                    request.query.?,
-                    value_start_index,
-                    '&',
-                ) orelse request.query.?.len;
-
-                if (value_start_index >= parameter_end_index)
-                    return ParseError.MissingValue;
-
-                const value = request.query.?[value_start_index..parameter_end_index];
-
-                switch (@typeInfo(field_type)) {
-                    inline .bool => {
-                        // Bool
-                        const is_true = eqlIgnoreCase(value, "true");
-                        const is_false = eqlIgnoreCase(value, "false");
-
-                        if (!(is_true or is_false))
-                            return ParseError.InvalidBool;
-                        field_ptr.* = is_true;
-                    },
-                    inline .int => {
-                        // Integer
-                        field_ptr.* = try parseInt(field_type, value, 10);
-                    },
-                    inline .float => {
-                        // Float
-                        field_ptr.* = try parseFloat(field_type, value);
-                    },
-                    inline .@"enum" => {
-                        // Enum
-                        field_ptr.* = stringToEnum(field_type, value) orelse
-                            return ParseError.InvalidEnum;
-                    },
-                    inline else => {
-                        if (comptime field_type == []const u8)
-                            // String
-                            field_ptr.* = try allocator.dupe(u8, value)
-                        else if (comptime field_type == Time)
-                            // Time
-                            field_ptr.* = try Time.fromISO8601(value)
+                    const field_type =
+                        if (structure_info == .optional)
+                            structure_info.optional.child
                         else
-                            unreachable;
-                    },
+                            field.type;
+                    const field_ptr = fieldPtr(Structure, field.name, &dest.data);
+
+                    // Getting parameter value
+                    const parameter_value_value = reader.takeDelimiterExclusive('&') catch |err| switch (err) {
+                        error.EndOfStream => return error.MissingValue,
+                        else => return err,
+                    };
+
+                    if (parameter_value_value.len == 0)
+                        return error.MissingValue;
+
+                    switch (@typeInfo(field_type)) {
+                        inline .bool => {
+                            // Bool
+                            const is_true = eqlIgnoreCase(parameter_value_value, "true");
+                            const is_false = eqlIgnoreCase(parameter_value_value, "false");
+
+                            if (!(is_true or is_false))
+                                return error.InvalidBool;
+                            field_ptr.* = is_true;
+                        },
+                        inline .int => {
+                            // Integer
+                            field_ptr.* = try parseInt(field_type, parameter_value_value, 10);
+                        },
+                        inline .float => {
+                            // Float
+                            field_ptr.* = try parseFloat(field_type, parameter_value_value);
+                        },
+                        inline .@"enum" => {
+                            // Enum
+                            field_ptr.* = stringToEnum(field_type, parameter_value_value) orelse
+                                return error.InvalidEnum;
+                        },
+                        inline else => {
+                            const decoded_value = try decodeUriStringtoUTF8(parameter_value_value);
+
+                            if (comptime field_type == []const u8)
+                                // String
+                                field_ptr.* = try allocator.dupe(u8, decoded_value)
+                            else if (comptime field_type == Time)
+                                // Time
+                                field_ptr.* = try Time.fromISO8601(decoded_value)
+                            else
+                                unreachable;
+                        },
+                    }
+
+                    is_valid_name = true;
+                    assigned_fields[field_index] = true;
+
+                    if (reader.bufferedLen() == 0)
+                        break :reader_loop;
+                    if (reader.bufferedLen() < 3)
+                        // Reader doesn't have minimal nessesary bytes for parameter
+                        return error.ExcessQueryTail;
+
+                    // Validate interparameter delimiter
+                    const interparameter_delimiter = try reader.take(1);
+
+                    if (interparameter_delimiter[0] != '&')
+                        return error.MissingInterparameterDelimiter;
                 }
 
-                parsed_params_count += 1;
+                if (!is_valid_name)
+                    return error.InvalidName;
             }
 
-            // Check if any excess parameters exist in `request.query`
-            if (next_param_count + 1 != parsed_params_count)
-                return ParseError.ExcessQuery;
+            // Reader is empty, handle optional fields
+            inline for (structure_info.@"struct".fields, 0..) |field, index| check_loop: {
+                if (assigned_fields[index])
+                    break :check_loop;
+
+                const info = @typeInfo(field.type);
+
+                if (!(info == .optional or field.defaultValue() != null))
+                    return error.MissingParameter;
+
+                const field_ptr = fieldPtr(Structure, field.name, &dest.data);
+
+                if (field.defaultValue()) |default_value| {
+                    field_ptr.* = default_value;
+                } else {
+                    field_ptr.* = null;
+                }
+            }
         }
     };
 }
 
+/// Trait check for QueryParameters
+///
+/// - `Type` must fullfil the isResourceParameters trait check
+/// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.query
+/// - `Type` must be able to generate `Type` using its declarations and function QueryParameters
 pub fn isQueryParameters(comptime Type: type) bool {
-    return isResourceParameters(Type) and Type.parameters_type == .query and
+    const is_resource_parameters = isResourceParameters(Type);
+
+    const is_query_parameters_type =
+        is_resource_parameters and
+        Type.parameters_type == .query;
+
+    const can_generate_self =
+        is_query_parameters_type and
         QueryParameters(Type.structure) == Type;
+
+    return is_resource_parameters and is_query_parameters_type and can_generate_self;
 }
