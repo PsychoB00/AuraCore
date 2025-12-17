@@ -72,9 +72,10 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
+                    path_parameter: *const PathParameters(struct { items: []const u8 }),
                     context: *Context,
                 ) !StatusCode {
-                    context.logger.log(.info).scope("Here").time().print("Hello").src(@src()).commit();
+                    context.logger.log(.debug).printFmt("{s}", .{path_parameter.data.items}).commit();
                     return .ok;
                 }
             },

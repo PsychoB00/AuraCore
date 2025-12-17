@@ -95,7 +95,10 @@ routing:
         - [o] Fix StaticResource for headers rework
         - [o] Fix APIResource for headers rework
     - 0.0.14:
-        - [] Rework PathParameter, QueryParameters and BodyParameters to use Io
+        - [o] Rework PathParameters, QueryParameters and BodyParameters to use Io
+    - 0.0.15:
+        - [x] Rework isPathParameters
+        - [x] Rework PathParameters to use Io and does utf8 decoding
     - OnRequestProcessor:
         - [x] Fix the request invalidation
         - [x] Finish all the functions for errorous behaviour

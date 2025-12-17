@@ -35,10 +35,32 @@ pub const ParametersType = enum {
     }
 };
 
+/// Trait check for ResourceParameters
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration for type of parameters which it is, named "parameters_type"
+///     - `parameters_type` must be declaration of ParametersType
+/// - `Type` must have declaration for type of structure which it uses, named "structure"
+///     - `structure` must be declaration of a type
+/// - `Type` must have field of its data named "data"
+///     - `data` must be field of `structure`
 pub fn isResourceParameters(comptime Type: type) bool {
-    return @hasDecl(Type, "parameters_type") and @TypeOf(Type.parameters_type) == ParametersType and
-        @hasDecl(Type, "structure") and @TypeOf(Type.structure) == type and
-        @hasField(Type, "data") and @FieldType(Type, "data") == Type.structure;
+    const is_struct = @typeInfo(Type) == .@"struct";
+
+    const has_parameters_type =
+        @hasDecl(Type, "parameters_type") and
+        @TypeOf(Type.parameters_type) == ParametersType;
+
+    const has_structure =
+        @hasDecl(Type, "structure") and
+        @TypeOf(Type.structure) == type;
+
+    const has_data =
+        has_structure and
+        @hasField(Type, "data") and
+        @FieldType(Type, "data") == Type.structure;
+
+    return is_struct and has_parameters_type and has_structure and has_data;
 }
 
 /// Structure for binding `Controller` and `Options` together to define REST API resource
@@ -52,7 +74,7 @@ pub fn isResourceParameters(comptime Type: type) bool {
 ///     - Allocator
 /// - Return type of http method must be either StatusCode or !StatusCode.
 /// - If `Options.authenticate` is true, `Controller` can have function `unauthorized`.
-/// - For brevity of APIResource type decleration, exact Context type is not checked until StaticRoute
+/// - For brevity of APIResource type declaration, exact Context type is not checked until StaticRoute
 ///   generation in Router.
 pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions) type {
     // `Controller` correctness asssertion

@@ -2,9 +2,9 @@
 const std = @import("std");
 
 const assert = std.debug.assert;
+const toUpper = std.ascii.toUpper;
 const isASCIIHex = std.ascii.isHex;
 const isASCIIDigit = std.ascii.isDigit;
-const isASCIIUpper = std.ascii.isUpper;
 
 /// Aura
 pub const getVersion = @import("version.zig").getVersion;
@@ -18,6 +18,16 @@ pub const utils = struct {
             @ptrFromInt(@intFromPtr(parent) + @offsetOf(ParentType, Name)),
         );
     }
+
+    pub fn hexCharToInt(character: u8) !u4 {
+        if (!isASCIIHex(character))
+            return error.NonHexCharacter;
+
+        return if (isASCIIDigit(character))
+            @as(u4, @truncate(character - '0'))
+        else
+            @as(u4, @truncate(toUpper(character) - 'A')) + 10;
+    }
 };
 
 pub const context = @import("context.zig");
@@ -26,6 +36,9 @@ pub const jwt = @import("jwt.zig");
 pub const json = @import("json.zig");
 
 pub const net = struct {
+    const uri = @import("net/uri.zig");
+    pub const decodeUriStringtoUTF8 = uri.decodeUriStringtoUTF8;
+
     const method = @import("net/method.zig");
     pub const methodToLower = method.methodToLower;
     pub const methodToUpper = method.methodToUpper;

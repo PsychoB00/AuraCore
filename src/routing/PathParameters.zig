@@ -2,6 +2,7 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Reader = std.Io.Reader;
 
 const comptimePrint = std.fmt.comptimePrint;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
@@ -15,6 +16,7 @@ const core = @import("../core.zig");
 const ParametersType = core.routing.ParametersType;
 
 const fieldPtr = core.utils.fieldPtr;
+const decodeUriStringtoUTF8 = core.net.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
 
 /// Third Party
@@ -24,19 +26,13 @@ const Request = zap.Request;
 const zeit = @import("zeit");
 const Time = zeit.Time;
 
-pub const ParseError = error{
-    MissingPath,
-    MissingParameter,
-    MissingValue,
-    ExcessPath,
-};
-
 /// Parameters defining the Resource's identity
 ///
-/// - Fields of `Structure` represent individual parameters, they are order sensitive.
+/// - Fields of `Structure` represent individual parameters, they are order and case sensitive.
 /// - First field in `Structure` must have the same name as the APIResource using it.
 /// - Every parameter can be optional. If any parameter is optional, subsequent parameters must be optional as well.
-/// - Parameters can be typed as unsigned integer, string or zeit.Time(ISO 8601).
+/// - Parameters can be typed as unsigned integer, []const u8 or zeit.Time(ISO 8601).
+/// - If a parameter is typed as []const u8, it will be in utf-8 encoding
 /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
 ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
 ///   the lifetime of the memory to lifetime of the zap.Request.
@@ -70,7 +66,7 @@ pub fn PathParameters(comptime Structure: type) type {
                     @compileError("Signed field type found");
             },
             else => {
-                if (field_type != []const u8 and field_type != Time)
+                if (!(field_type == []const u8 or field_type == Time))
                     @compileError("Unsupported field type found");
             },
         }
@@ -109,101 +105,94 @@ pub fn PathParameters(comptime Structure: type) type {
             }
 
             if (request.path == null)
-                return ParseError.MissingPath;
+                return error.MissingPath;
 
-            var parameter_start_index = StaticPath.len - structure_info.@"struct".fields[0].name.len;
-            var parsed_params_count: usize = 0;
-            const next_param_count =
-                blk: {
-                    var count: usize = 0;
+            var reader = Reader.fixed(request.path.?[(StaticPath.len - structure_info.@"struct".fields[0].name.len) - 1 ..]);
 
-                    for (request.path.?[parameter_start_index..]) |char| {
-                        if (char == '/')
-                            count += 1;
-                    }
-
-                    break :blk count;
-                };
-            var null_optional_found: bool = false;
-
-            inline for (structure_info.@"struct".fields) |field| inline_loop: {
-                const field_info = @typeInfo(field.type);
+            // Assign to fields of `dest.data`
+            inline for (@typeInfo(Structure).@"struct".fields) |field| field_loop: {
+                const info = @typeInfo(field.type);
                 const field_type =
-                    if (field_info == .optional)
-                        field_info.optional.child
+                    if (info == .optional)
+                        info.optional.child
                     else
                         field.type;
-
                 const field_ptr = fieldPtr(Structure, field.name, &dest.data);
 
-                if (null_optional_found) {
-                    if (comptime field_info != .optional)
-                        unreachable;
+                if (reader.bufferedLen() == 0) {
+                    // Reader is empty, handle optional fields
+                    if (info != .optional)
+                        return error.MissingParameter;
 
                     field_ptr.* = null;
-                    break :inline_loop;
-                }
+                    break :field_loop;
+                } else if (reader.bufferedLen() < 4)
+                    // Reader doesn't have minimal nessesary bytes for parameter
+                    return error.ExcessPathTail;
 
-                // Get value of parameter
-                var value_start_index: usize = indexOfScalarPos(
-                    u8,
-                    request.path.?,
-                    parameter_start_index,
-                    '/',
-                ) orelse {
-                    if (field_info != .optional)
-                        return ParseError.MissingParameter;
+                // Validate parameter leading delimiter
+                const parameter_leading_delimiter_value = try reader.take(1);
 
-                    null_optional_found = true;
-                    field_ptr.* = null;
-                    break :inline_loop;
+                if (parameter_leading_delimiter_value[0] != '/')
+                    return error.MissingLeadingDelimiter;
+
+                // Validating parameter name
+                const parameter_name_value = reader.takeDelimiterInclusive('/') catch |err| switch (err) {
+                    error.EndOfStream => return error.MissingNameValueDelimiter,
+                    else => return err,
                 };
-                value_start_index += 1;
 
-                if (!eql(u8, request.path.?[parameter_start_index..(value_start_index - 1)], field.name))
-                    return ParseError.MissingParameter;
+                if (!eql(u8, parameter_name_value, field.name ++ "/"))
+                    return error.InvalidName;
 
-                const parameter_end_index = indexOfScalarPos(
-                    u8,
-                    request.path.?,
-                    value_start_index,
-                    '/',
-                ) orelse request.path.?.len;
+                // Getting parameter value
+                const parameter_value_value = reader.takeDelimiterExclusive('/') catch |err| switch (err) {
+                    error.EndOfStream => return error.MissingValue,
+                    else => return err,
+                };
 
-                if (value_start_index >= parameter_end_index)
-                    return ParseError.MissingValue;
-
-                const value = request.path.?[value_start_index..parameter_end_index];
+                if (parameter_value_value.len == 0)
+                    return error.MissingValue;
 
                 switch (@typeInfo(field_type)) {
-                    inline .int => {
-                        // Unsigned integer
-                        field_ptr.* = try parseInt(field_type, value, 10);
-                    },
+                    // Unsigned integer
+                    inline .int => field_ptr.* = try parseInt(field_type, parameter_value_value, 10),
                     inline else => {
+                        const decoded_value = try decodeUriStringtoUTF8(parameter_value_value);
+
                         if (comptime field_type == []const u8)
                             // String
-                            field_ptr.* = try allocator.dupe(u8, value)
+                            field_ptr.* = try allocator.dupe(u8, decoded_value)
                         else if (comptime field_type == Time)
                             // Time
-                            field_ptr.* = try Time.fromISO8601(value)
+                            field_ptr.* = try Time.fromISO8601(decoded_value)
                         else
                             unreachable;
                     },
                 }
-
-                parameter_start_index = parameter_end_index + 1;
-                parsed_params_count += 2;
             }
 
-            // Check if any excess parameters exist in `request.path`
-            if (next_param_count + 1 != parsed_params_count)
-                return ParseError.ExcessPath;
+            if (reader.bufferedLen() != 0)
+                return error.ExcessPathTail;
         }
     };
 }
 
+/// Trait check for PathParameters
+///
+/// - `Type` must fullfil the isResourceParameters trait check
+/// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.path
+/// - `Type` must be able to generate `Type` using its declarations and function PathParameters
 pub fn isPathParameters(comptime Type: type) bool {
-    return isResourceParameters(Type) and Type.parameters_type == .path and
+    const is_resource_parameters = isResourceParameters(Type);
+
+    const is_path_parameters_type =
+        is_resource_parameters and
+        Type.parameters_type == .path;
+
+    const can_generate_self =
+        is_path_parameters_type and
         PathParameters(Type.structure) == Type;
+
+    return is_resource_parameters and is_path_parameters_type and can_generate_self;
 }

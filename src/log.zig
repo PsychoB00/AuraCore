@@ -11,7 +11,6 @@ const SourceLocation = std.builtin.SourceLocation;
 const assert = std.debug.assert;
 const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
-const indexOfScalarPos = std.mem.indexOfScalarPos;
 const copyForwards = std.mem.copyForwards;
 const bufPrint = std.fmt.bufPrint;
 const isLower = std.ascii.isLower;
@@ -367,17 +366,17 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
 /// Trait check for Logger
 ///
 /// - `Type` must be struct
-/// - `Type` must have decleration for self named "LoggerType"
-///     - `LoggerType` must be decleration of type which is the same as `Type`
-/// - `Type` must have decleration for type of Log which it uses, named "log_t"
-///     - `log_t` must be decleration of a type
+/// - `Type` must have declaration for self named "LoggerType"
+///     - `LoggerType` must be declaration of type which is the same as `Type`
+/// - `Type` must have declaration for type of Log which it uses, named "log_t"
+///     - `log_t` must be declaration of a type
 ///     - `log_t` must fulfill trait check `isLog`
-/// - `Type` must have decleration for type of LogProcessor which it uses, named "log_processor_t"
-///     - `log_processor_t` must be decleration of a type
+/// - `Type` must have declaration for type of LogProcessor which it uses, named "log_processor_t"
+///     - `log_processor_t` must be declaration of a type
 ///     - `log_processor_t` must fulfill trait check `isLogProcessor`
-/// - `Type` must have decleration of its options named "options"
-///     - `options` must be decleration of LoggerOptions
-/// - `Type` must be able to generate `Type` using its declerations
+/// - `Type` must have declaration of its options named "options"
+///     - `options` must be declaration of LoggerOptions
+/// - `Type` must be able to generate `Type` using its declarations and function Logger
 pub fn isLogger(comptime Type: type) bool {
     const is_struct = @typeInfo(Type) == .@"struct";
 
@@ -608,11 +607,11 @@ pub fn Log(comptime Options: LogOptions) type {
 /// Trait check for Log
 ///
 /// - `Type` must be struct
-/// - `Type` must have decleration for self named "LogType"
-///     - `LogType` must be decleration of type which is the same as `Type`
-/// - `Type` must have decleration of its options named "options"
-///     - `options` must be decleration of LogOptions
-/// - `Type` must be able to generate `Type` using its declerations
+/// - `Type` must have declaration for self named "LogType"
+///     - `LogType` must be declaration of type which is the same as `Type`
+/// - `Type` must have declaration of its options named "options"
+///     - `options` must be declaration of LogOptions
+/// - `Type` must be able to generate `Type` using its declarations and function Log
 pub fn isLog(comptime Type: type) bool {
     const is_struct = @typeInfo(Type) == .@"struct";
 
@@ -851,12 +850,12 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
 /// Trait check for LogProcessor
 ///
 /// - `Type` must be a struct
-/// - `Type` must have decleration for type of Log which it uses, named "log_t"
-///     - `log_t` must be decleration of a type
+/// - `Type` must have declaration for type of Log which it uses, named "log_t"
+///     - `log_t` must be declaration of a type
 ///     - `log_t` must fulfill trait check `isLog`
-/// - `Type` must have method decleration named "init"
+/// - `Type` must have method declaration named "init"
 ///     - `init` must have function signiture of fn (*Type, *Enviroment) void
-/// - `Type` must have method decleration named "processLog"
+/// - `Type` must have method declaration named "processLog"
 ///     - `processLog` must have function signiture of fn (*Type, *const Type.log_t) void
 pub fn isLogProcessor(comptime Type: type) bool {
     const is_struct = @typeInfo(Type) == .@"struct";
