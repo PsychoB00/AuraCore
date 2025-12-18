@@ -12,10 +12,12 @@ const core = @import("../core.zig");
 
 const hexCharToInt = core.utils.hexCharToInt;
 
+pub const allowed_path_characters: []const u8 = "-._~!$&'()*+,;=:@/";
+
 /// Tries to decode `string` to utf-8, mutates `string` and returns slice
 ///
 /// ON ERROR, `string` is in undefined state
-pub fn decodeUriStringtoUTF8(string: []u8) ![]const u8 {
+pub fn decodeUriStringtoUTF8(comptime allowed_characters: []const u8, string: []u8) ![]const u8 {
     var index_offset: usize = 0;
     var current_percent_index: ?usize = null;
     var current_codepoints: [4]u8 = undefined;
@@ -56,7 +58,7 @@ pub fn decodeUriStringtoUTF8(string: []u8) ![]const u8 {
             continue;
         }
 
-        if (!(isAlphanumeric(character) or indexOfScalar(u8, "-._~/", character) != null))
+        if (!(isAlphanumeric(character) or indexOfScalar(u8, allowed_characters, character) != null))
             return error.InvalidCharacter;
 
         string[index - index_offset] = character;

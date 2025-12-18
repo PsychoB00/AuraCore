@@ -107,6 +107,11 @@ pub fn main() !void {
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
 
+    var header: core.net.headers.Host = undefined;
+    var reader = std.Io.Reader.fixed("[2001:db8:85a3::8a2e:370:7334]");
+    try header.parse(&reader, allocator);
+    std.debug.print("{f}\n", .{header});
+
     var my_context = Context{
         .logger = undefined,
     };

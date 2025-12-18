@@ -64,6 +64,7 @@ pub fn build(b: *std.Build) void {
         .name = "TestExe",
         .root_module = exe_mod,
     });
+    exe.use_llvm = true;
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);

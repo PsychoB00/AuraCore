@@ -27,7 +27,6 @@ const zeit = @import("zeit");
 const TimeZone = zeit.TimeZone;
 const Instant = zeit.Instant;
 
-/// Code
 pub const State = enum(u8) {
     empty,
     reserved,
@@ -235,6 +234,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
             assert(self.log_pool == null);
             assert(self.reserve_index == null);
 
+            self.uncollected.store(1, .release);
             self.thread = try std.Thread.spawn(
                 .{},
                 _collect,
@@ -242,7 +242,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
             );
 
             // Waiting for collecting thread to initialize it's stack
-            Futex.wait(&self.uncollected, 0);
+            Futex.wait(&self.uncollected, 1);
         }
 
         /// Initialize collecting thread stack and start collecting loop
@@ -250,9 +250,6 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
         /// DO NOT CALL, internal use only
         fn _collect(self: *LoggerType) void {
             assert(!self.thread_running.load(.acquire));
-            assert(self.thread != null);
-            assert(self.log_pool == null);
-            assert(self.reserve_index == null);
 
             // Initialize stack of collecting thread
             self.thread_running.store(true, .release);
@@ -267,7 +264,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
             defer self.reserve_index = null;
 
             // Waking spawning thread waiting for collecting thread initialization
-            Futex.wake(&self.uncollected, 1);
+            self.uncollected.store(0, .release);
 
             // Collecting loop
             while (self.thread_running.load(.acquire) or self.uncollected.load(.acquire) != 0) {

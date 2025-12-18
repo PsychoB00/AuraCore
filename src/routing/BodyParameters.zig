@@ -23,12 +23,6 @@ const Request = zap.Request;
 const zimdjson = @import("zimdjson");
 const JsonParser = zimdjson.ondemand.FullParser(.default);
 
-pub const ParseError = error{
-    MissingBody,
-    MissingContentType,
-    UnsupportedContentType,
-};
-
 /// Parameters for larger and more complex data
 ///
 /// - `Structure` is a type representing content of the body, can be optional type.
@@ -52,11 +46,11 @@ pub fn BodyParameters(comptime Structure: type) type {
                 if (comptime @typeInfo(Structure) == .optional) {
                     dest.data = null;
                     return;
-                } else return ParseError.MissingBody;
+                } else return error.MissingBody;
 
             dest.data = try allocator.dupe(u8, request.body.?);
 
-            return ParseError.UnsupportedContentType;
+            return error.UnsupportedContentType;
         }
     };
 }

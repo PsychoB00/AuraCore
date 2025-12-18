@@ -39,6 +39,7 @@ json:
 net:
     - headers:
         [o] Headers rework
+        [o] Add Host
 
 routing:
     - Router:
@@ -58,7 +59,7 @@ routing:
         - [o] Fix StaticResource for headers rework
         - [o] Fix APIResource for headers rework
     - 0.0.14:
-        - [o] Rework PathParameters, QueryParameters and BodyParameters to use Io
+        - [x] Rework PathParameters, QueryParameters and BodyParameters to use Io
     - 0.0.15:
         - [x] Rework isPathParameters
         - [x] Rework PathParameters to use Io and does utf8 decoding

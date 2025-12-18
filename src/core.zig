@@ -28,6 +28,13 @@ pub const utils = struct {
         else
             @as(u4, @truncate(toUpper(character) - 'A')) + 10;
     }
+
+    pub fn assertValidate(not_error: anyerror!void) void {
+        assert(assert_blk: {
+            not_error catch break :assert_blk false;
+            break :assert_blk true;
+        });
+    }
 };
 
 pub const context = @import("context.zig");
@@ -36,8 +43,9 @@ pub const jwt = @import("jwt.zig");
 pub const json = @import("json.zig");
 
 pub const net = struct {
-    const uri = @import("net/uri.zig");
-    pub const decodeUriStringtoUTF8 = uri.decodeUriStringtoUTF8;
+    pub const headers = @import("net/headers/headers.zig");
+
+    pub const uri = @import("net/uri.zig");
 
     const method = @import("net/method.zig");
     pub const methodToLower = method.methodToLower;

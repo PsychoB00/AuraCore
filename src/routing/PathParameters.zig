@@ -15,8 +15,10 @@ const core = @import("../core.zig");
 const ParametersType = core.routing.ParametersType;
 
 const fieldPtr = core.utils.fieldPtr;
-const decodeUriStringtoUTF8 = core.net.decodeUriStringtoUTF8;
+const decodeUriStringtoUTF8 = core.net.uri.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
+
+const allowed_path_characters = core.net.uri.allowed_path_characters;
 
 /// Third Party
 const zap = @import("zap");
@@ -156,7 +158,7 @@ pub fn PathParameters(comptime Structure: type) type {
                     // Unsigned integer
                     inline .int => field_ptr.* = try parseInt(field_type, parameter_value_value, 10),
                     inline else => {
-                        const decoded_value = try decodeUriStringtoUTF8(parameter_value_value);
+                        const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value);
 
                         if (comptime field_type == []const u8)
                             // String

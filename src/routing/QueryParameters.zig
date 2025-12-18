@@ -18,8 +18,10 @@ const core = @import("../core.zig");
 const ParametersType = core.routing.ParametersType;
 
 const fieldPtr = core.utils.fieldPtr;
-const decodeUriStringtoUTF8 = core.net.decodeUriStringtoUTF8;
+const decodeUriStringtoUTF8 = core.net.uri.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
+
+const allowed_path_characters = core.net.uri.allowed_path_characters;
 
 /// Third Party
 const zap = @import("zap");
@@ -58,7 +60,7 @@ pub fn QueryParameters(comptime Structure: type) type {
             if (@typeInfo(field.type) == .optional)
                 break :blk @typeInfo(field.type).optional.child
             else {
-                has_non_optional_fields = true;
+                has_non_optional_fields = field.defaultValue() == null;
                 break :blk field.type;
             }
         };
@@ -96,6 +98,12 @@ pub fn QueryParameters(comptime Structure: type) type {
             var reader = Reader.fixed(request.query orelse "");
 
             reader_loop: while (true) {
+                if (reader.bufferedLen() == 0)
+                    break :reader_loop;
+                if (reader.bufferedLen() < 3)
+                    // Reader doesn't have minimal nessesary bytes for parameter
+                    return error.ExcessQueryTail;
+
                 // Validating parameter name
                 const parameter_name_value = reader.takeDelimiterInclusive('=') catch |err| switch (err) {
                     error.EndOfStream => return error.MissingNameValueDelimiter,
@@ -112,8 +120,8 @@ pub fn QueryParameters(comptime Structure: type) type {
                         return error.DuplicateParameters;
 
                     const field_type =
-                        if (structure_info == .optional)
-                            structure_info.optional.child
+                        if (@typeInfo(field.type) == .optional)
+                            @typeInfo(field.type).optional.child
                         else
                             field.type;
                     const field_ptr = fieldPtr(Structure, field.name, &dest.data);
@@ -151,7 +159,7 @@ pub fn QueryParameters(comptime Structure: type) type {
                                 return error.InvalidEnum;
                         },
                         inline else => {
-                            const decoded_value = try decodeUriStringtoUTF8(parameter_value_value);
+                            const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value);
 
                             if (comptime field_type == []const u8)
                                 // String
@@ -167,17 +175,13 @@ pub fn QueryParameters(comptime Structure: type) type {
                     is_valid_name = true;
                     assigned_fields[field_index] = true;
 
-                    if (reader.bufferedLen() == 0)
-                        break :reader_loop;
-                    if (reader.bufferedLen() < 3)
-                        // Reader doesn't have minimal nessesary bytes for parameter
-                        return error.ExcessQueryTail;
-
                     // Validate interparameter delimiter
-                    const interparameter_delimiter = try reader.take(1);
+                    if (reader.bufferedLen() >= 3) {
+                        const interparameter_delimiter = try reader.take(1);
 
-                    if (interparameter_delimiter[0] != '&')
-                        return error.MissingInterparameterDelimiter;
+                        if (interparameter_delimiter[0] != '&')
+                            return error.MissingInterparameterDelimiter;
+                    }
                 }
 
                 if (!is_valid_name)
