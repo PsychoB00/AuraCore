@@ -120,20 +120,20 @@ pub fn PathParameters(comptime Structure: type) type {
                 const field_ptr = fieldPtr(Structure, field.name, &dest.data);
 
                 if (reader.bufferedLen() == 0) {
-                    // Reader is empty, handle optional fields
+                    // `reader` is empty, handle optional fields
                     if (structure_info != .optional)
                         return error.MissingParameter;
 
                     field_ptr.* = null;
                     break :field_loop;
                 } else if (reader.bufferedLen() < 4)
-                    // Reader doesn't have minimal nessesary bytes for parameter
+                    // `reader` doesn't have minimal nessesary bytes for parameter
                     return error.ExcessPathTail;
 
                 // Validate parameter leading delimiter
-                const parameter_leading_delimiter_value = try reader.take(1);
+                const parameter_leading_delimiter_value = try reader.takeByte();
 
-                if (parameter_leading_delimiter_value[0] != '/')
+                if (parameter_leading_delimiter_value != '/')
                     return error.MissingLeadingDelimiter;
 
                 // Validating parameter name
@@ -158,11 +158,11 @@ pub fn PathParameters(comptime Structure: type) type {
                     // Unsigned integer
                     inline .int => field_ptr.* = try parseInt(field_type, parameter_value_value, 10),
                     inline else => {
-                        const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value);
+                        const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value, allocator);
 
                         if (comptime field_type == []const u8)
                             // String
-                            field_ptr.* = try allocator.dupe(u8, decoded_value)
+                            field_ptr.* = decoded_value
                         else if (comptime field_type == Time)
                             // Time
                             field_ptr.* = try Time.fromISO8601(decoded_value)

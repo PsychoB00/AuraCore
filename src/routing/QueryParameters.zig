@@ -101,7 +101,7 @@ pub fn QueryParameters(comptime Structure: type) type {
                 if (reader.bufferedLen() == 0)
                     break :reader_loop;
                 if (reader.bufferedLen() < 3)
-                    // Reader doesn't have minimal nessesary bytes for parameter
+                    // `reader` doesn't have minimal nessesary bytes for parameter
                     return error.ExcessQueryTail;
 
                 // Validating parameter name
@@ -159,11 +159,11 @@ pub fn QueryParameters(comptime Structure: type) type {
                                 return error.InvalidEnum;
                         },
                         inline else => {
-                            const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value);
+                            const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value, allocator);
 
                             if (comptime field_type == []const u8)
                                 // String
-                                field_ptr.* = try allocator.dupe(u8, decoded_value)
+                                field_ptr.* = decoded_value
                             else if (comptime field_type == Time)
                                 // Time
                                 field_ptr.* = try Time.fromISO8601(decoded_value)
@@ -177,9 +177,9 @@ pub fn QueryParameters(comptime Structure: type) type {
 
                     // Validate interparameter delimiter
                     if (reader.bufferedLen() >= 3) {
-                        const interparameter_delimiter = try reader.take(1);
+                        const interparameter_delimiter = try reader.takeByte();
 
-                        if (interparameter_delimiter[0] != '&')
+                        if (interparameter_delimiter != '&')
                             return error.MissingInterparameterDelimiter;
                     }
                 }

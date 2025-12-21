@@ -13,6 +13,9 @@ const Ip6Address = std.net.Ip6Address;
 const assert = std.debug.assert;
 const parseInt = std.fmt.parseInt;
 const isHostnameValid = std.net.isValidHostName;
+const utf8ByteSequenceLength = std.unicode.utf8ByteSequenceLength;
+const percentEncode = std.Uri.Component.percentEncode;
+const isAscii = std.ascii.isAscii;
 
 /// Aura
 const core = @import("../../core.zig");
@@ -20,6 +23,7 @@ const core = @import("../../core.zig");
 const HttpHeaderType = core.net.headers.HttpHeaderType;
 
 const assertValidate = core.utils.assertValidate;
+const decodeUriStringToUTF8 = core.net.uri.decodeUriStringtoUTF8;
 
 /// Http header Host, specifies the host and port number of the server to which the request is being sent
 pub const Host = struct {
@@ -69,8 +73,8 @@ pub const Host = struct {
                 }
 
                 // Validate address port delimiter
-                const address_port_delimiter_value = try reader.take(1);
-                if (address_port_delimiter_value[0] != ':')
+                const address_port_delimiter_value = try reader.takeByte();
+                if (address_port_delimiter_value != ':')
                     return error.InvalidAddressPortDelimiter;
 
                 // Get port
@@ -118,8 +122,8 @@ pub const Host = struct {
                 }
 
                 // Validate address port delimiter
-                const address_port_delimiter_value = try reader.take(1);
-                if (address_port_delimiter_value[0] != ':')
+                const address_port_delimiter_value = try reader.takeByte();
+                if (address_port_delimiter_value != ':')
                     return error.InvalidAddressPortDelimiter;
 
                 // Get port
@@ -136,6 +140,10 @@ pub const Host = struct {
             hostname: []const u8,
             port: ?u16 = null,
 
+            pub fn validate(self: DNS) !void {
+                try _validateHostname(self.hostname);
+            }
+
             fn _validateHostname(hostname: []const u8) !void {
                 if (hostname.len == 0)
                     return error.HostnameTooShort;
@@ -146,7 +154,7 @@ pub const Host = struct {
             pub fn format(self: DNS, writer: *Writer) WriterError!void {
                 assertValidate(_validateHostname(self.hostname));
 
-                try writer.writeAll(self.hostname);
+                try percentEncode(writer, self.hostname, isAscii);
 
                 if (self.port) |port|
                     try writer.print(":{d}", .{port});
@@ -155,9 +163,11 @@ pub const Host = struct {
             pub fn parse(self: *DNS, reader: *Reader, allocator: Allocator) !void {
                 // Get hostname
                 const hostname_value = try reader.takeDelimiterExclusive(':');
-                try _validateHostname(hostname_value);
 
-                self.hostname = try allocator.dupe(u8, hostname_value);
+                if (hostname_value.len == 0)
+                    return error.HostnameTooShort;
+
+                self.hostname = try decodeUriStringToUTF8(".-", hostname_value, allocator);
 
                 // Port check
                 if (reader.bufferedLen() == 0) {
@@ -166,8 +176,8 @@ pub const Host = struct {
                 }
 
                 // Validate hostname port delimiter
-                const hostname_port_delimiter_value = try reader.take(1);
-                if (hostname_port_delimiter_value[0] != ':')
+                const hostname_port_delimiter_value = try reader.takeByte();
+                if (hostname_port_delimiter_value != ':')
                     return error.InvalidHostnamePortDelimiter;
 
                 // Get port
@@ -181,6 +191,13 @@ pub const Host = struct {
         ip4: IP4,
         ip6: IP6,
         dns: DNS,
+
+        pub fn validate(self: Hostname) !void {
+            switch (self) {
+                .dns => |dns| try dns.validate(),
+                else => {},
+            }
+        }
 
         pub fn format(self: Hostname, writer: *Writer) WriterError!void {
             try switch (self) {
@@ -217,6 +234,10 @@ pub const Host = struct {
 
     hostname: Hostname,
 
+    pub fn validate(self: Host) anyerror!void {
+        try self.hostname.validate();
+    }
+
     /// Formats the header value to `writer`
     pub fn format(self: Host, writer: *Writer) WriterError!void {
         try self.hostname.format(writer);
@@ -225,7 +246,7 @@ pub const Host = struct {
     /// Parses the header value from `reader`
     ///
     /// `allocator` MUST BE arena allocator, this parse is leaky
-    pub fn parse(self: *Host, reader: *Reader, allocator: Allocator) !void {
+    pub fn parse(self: *Host, reader: *Reader, allocator: Allocator) anyerror!void {
         try self.hostname.parse(reader, allocator);
     }
 };

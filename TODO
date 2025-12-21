@@ -39,7 +39,11 @@ json:
 net:
     - headers:
         [o] Headers rework
-        [o] Add Host
+        [x] Add Host
+    - 0.0.18:
+        [x] Add User-Agent
+        [x] Add format, parse and validate to trait check IsHttpHeader
+        [x] Fix Host parsing and formating encoding
 
 routing:
     - Router:

@@ -108,9 +108,12 @@ pub fn main() !void {
     defer enviroment.deinit();
 
     var header: core.net.headers.Host = undefined;
-    var reader = std.Io.Reader.fixed("[2001:db8:85a3::8a2e:370:7334]");
+    var reader = std.Io.Reader.fixed("domain.%C5%99e%C5%99icha.com:3000");
     try header.parse(&reader, allocator);
     std.debug.print("{f}\n", .{header});
+
+    comptime if (!core.net.headers.isHttpHeader(core.net.headers.Host))
+        @compileError(std.fmt.comptimePrint("{}", .{!core.net.headers.isHttpHeader(core.net.headers.Host)}));
 
     var my_context = Context{
         .logger = undefined,

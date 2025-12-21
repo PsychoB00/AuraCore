@@ -1,8 +1,10 @@
 /// STD
 const std = @import("std");
 
+const Allocator = std.mem.Allocator;
+
+const assert = std.debug.assert;
 const isAlphanumeric = std.ascii.isAlphanumeric;
-const indexOfScalar = std.mem.indexOfScalar;
 const utf8Decode2 = std.unicode.utf8Decode2;
 const utf8Decode3 = std.unicode.utf8Decode3;
 const utf8Decode4 = std.unicode.utf8Decode4;
@@ -14,10 +16,11 @@ const hexCharToInt = core.utils.hexCharToInt;
 
 pub const allowed_path_characters: []const u8 = "-._~!$&'()*+,;=:@/";
 
-/// Tries to decode `string` to utf-8, mutates `string` and returns slice
+/// Tries to decode `string` to utf-8
 ///
-/// ON ERROR, `string` is in undefined state
-pub fn decodeUriStringtoUTF8(comptime allowed_characters: []const u8, string: []u8) ![]const u8 {
+/// `string` mustn't be longer the 253 bytes
+pub fn decodeUriStringtoUTF8(comptime allowed_characters: []const u8, string: []const u8, allocator: Allocator) ![]const u8 {
+    var buffer: [253]u8 = undefined;
     var index_offset: usize = 0;
     var current_percent_index: ?usize = null;
     var current_codepoints: [4]u8 = undefined;
@@ -25,12 +28,15 @@ pub fn decodeUriStringtoUTF8(comptime allowed_characters: []const u8, string: []
 
     for (string, 0..) |character, index| {
         if (current_percent_index) |percent_index| {
+            if (percent_index - index_offset >= 253)
+                return error.StringTooLong;
+
             const current_index_offset: u3 = @truncate(index - percent_index);
-            string[percent_index - index_offset] |=
+            buffer[percent_index - index_offset] |=
                 @as(u8, try hexCharToInt(character)) << ((current_index_offset % 2) * 4);
 
             if (current_index_offset == 2) {
-                current_codepoints[current_codepoint_count] = string[percent_index - index_offset];
+                current_codepoints[current_codepoint_count] = buffer[percent_index - index_offset];
                 current_codepoint_count += 1;
 
                 if (index == string.len - 1 or string[index + 1] != '%') {
@@ -52,17 +58,26 @@ pub fn decodeUriStringtoUTF8(comptime allowed_characters: []const u8, string: []
             continue;
         }
 
+        if (index - index_offset >= 253)
+            return error.StringTooLong;
+
         if (character == '%') {
-            string[index - index_offset] = 0;
+            buffer[index - index_offset] = 0;
             current_percent_index = index;
             continue;
         }
 
-        if (!(isAlphanumeric(character) or indexOfScalar(u8, allowed_characters, character) != null))
-            return error.InvalidCharacter;
+        if (!isAlphanumeric(character)) allowed_characters_blk: {
+            inline for (allowed_characters) |allowed_character| {
+                if (allowed_character == character)
+                    break :allowed_characters_blk;
+            }
 
-        string[index - index_offset] = character;
+            return error.InvalidCharacter;
+        }
+
+        buffer[index - index_offset] = character;
     }
 
-    return string[0 .. string.len - index_offset];
+    return try allocator.dupe(u8, buffer[0 .. string.len - index_offset]);
 }
