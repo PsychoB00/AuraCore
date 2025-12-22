@@ -44,6 +44,12 @@ net:
         [x] Add User-Agent
         [x] Add format, parse and validate to trait check IsHttpHeader
         [x] Fix Host parsing and formating encoding
+    - 0.0.19:
+        [x] Fix isHttpHeader
+        [] Add Content-Length
+        [] Add Content-Type
+        [] Add Authorization
+        [] Define every EnforcedHeaders
 
 routing:
     - Router:
@@ -58,7 +64,7 @@ routing:
         - [x] Add other nessesary headers to StaticResource
     - 0.0.10:
         - [x] Remove Request parameter from APIResource
-        - [o] Add HeaderParameters for APIResource
+        - [x] Add HeaderParameters for APIResource
     - 0.0.12:
         - [o] Fix StaticResource for headers rework
         - [o] Fix APIResource for headers rework
@@ -69,5 +75,7 @@ routing:
         - [x] Rework PathParameters to use Io and does utf8 decoding
     - 0.0.16:
         - [x] Rework QueryParameters to use Io and does utf8 decoding
+    - 0.0.19:
+        - [] Fix StaticRoute for EnforcedHeaders
     - Respose:
         - [] Create Response struct

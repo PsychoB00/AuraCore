@@ -375,7 +375,8 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
 ///     - `options` must be declaration of LoggerOptions
 /// - `Type` must be able to generate `Type` using its declarations and function Logger
 pub fn isLogger(comptime Type: type) bool {
-    const is_struct = @typeInfo(Type) == .@"struct";
+    if (@typeInfo(Type) != .@"struct")
+        return false;
 
     const has_logger_type =
         @hasDecl(Type, "LoggerType") and
@@ -396,11 +397,13 @@ pub fn isLogger(comptime Type: type) bool {
         @hasDecl(Type, "options") and
         @TypeOf(Type.options) == LoggerOptions;
 
+    if (!(has_log_type and has_options and has_log_processor_type))
+        return false;
+
     const can_generate_self =
-        has_log_type and has_options and has_log_processor_type and
         Logger(Type.log_t, Type.log_processor_t, Type.options) == Type;
 
-    return is_struct and has_logger_type and has_log_type and has_log_processor_type and has_options and can_generate_self;
+    return has_logger_type and can_generate_self;
 }
 
 /// Statically sized Log
@@ -610,7 +613,8 @@ pub fn Log(comptime Options: LogOptions) type {
 ///     - `options` must be declaration of LogOptions
 /// - `Type` must be able to generate `Type` using its declarations and function Log
 pub fn isLog(comptime Type: type) bool {
-    const is_struct = @typeInfo(Type) == .@"struct";
+    if (@typeInfo(Type) != .@"struct")
+        return false;
 
     const has_log_type =
         @hasDecl(Type, "LogType") and
@@ -625,7 +629,7 @@ pub fn isLog(comptime Type: type) bool {
         has_options and
         Log(Type.options) == Type;
 
-    return is_struct and has_log_type and has_options and can_generate_self;
+    return has_log_type and has_options and can_generate_self;
 }
 
 /// Formating functions for Log
@@ -855,7 +859,8 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
 /// - `Type` must have method declaration named "processLog"
 ///     - `processLog` must have function signiture of fn (*Type, *const Type.log_t) void
 pub fn isLogProcessor(comptime Type: type) bool {
-    const is_struct = @typeInfo(Type) == .@"struct";
+    if (@typeInfo(Type) != .@"struct")
+        return false;
 
     const has_log_type =
         @hasDecl(Type, "log_t") and
@@ -870,5 +875,5 @@ pub fn isLogProcessor(comptime Type: type) bool {
         hasMethod(Type, "processLog") and
         @TypeOf(Type.processLog) == fn (*Type, *const Type.log_t) void;
 
-    return is_struct and has_log_type and has_init and has_process_log;
+    return has_log_type and has_init and has_process_log;
 }

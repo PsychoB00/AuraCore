@@ -23,6 +23,9 @@ const isAPIResource = core.routing.isAPIResource;
 const isResourceParameters = core.routing.isResourceParameters;
 const methodToLower = core.net.methodToLower;
 
+const HeaderParameters = core.routing.HeaderParameters;
+const EnforcedHeaders = core.routing.EnforcedHeaders;
+
 /// Third Party
 const zeit = @import("zeit");
 
@@ -291,6 +294,8 @@ pub fn StaticRoute(
             var resource_parameters: resource_parameters_type = undefined;
 
             // Parse parameters
+            comptime var has_header_parameters: bool = false;
+
             var query_parsed: ?bool = if (request.query == null) null else false;
             var body_parsed: ?bool = if (request.body == null) null else false;
 
@@ -320,6 +325,16 @@ pub fn StaticRoute(
 
                         query_parsed = true;
                     },
+                    inline .header => {
+                        has_header_parameters = true;
+
+                        field.type.parse(resource_options.strict_headers, allocator, request, parameters_ptr) catch |err| {
+                            if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                                processor.parametersInvalid(.header, err);
+                            request.setStatus(.bad_request);
+                            return;
+                        };
+                    },
                     inline .body => {
                         field.type.parse(allocator, request, parameters_ptr) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
@@ -331,6 +346,18 @@ pub fn StaticRoute(
                         body_parsed = true;
                     },
                 }
+            }
+
+            if (comptime !has_header_parameters) {
+                const header_parameters_type = HeaderParameters(EnforcedHeaders(.default));
+                var header_parameters: header_parameters_type = undefined;
+
+                header_parameters_type.parse(resource_options.strict_headers, allocator, request, &header_parameters) catch |err| {
+                    if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                        processor.parametersInvalid(.header, err);
+                    request.setStatus(.bad_request);
+                    return;
+                };
             }
 
             if (!(query_parsed orelse true)) {

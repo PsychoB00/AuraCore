@@ -53,7 +53,7 @@ pub fn QueryParameters(comptime Structure: type) type {
     if (structure_info.@"struct".decls.len != 0)
         @compileError("`Structure` mustn't any declarations");
     if (structure_info.@"struct".fields.len < 1)
-        @compileError("`Structure` must have at least one field");
+        @compileError("`Structure` must have at least one fields");
 
     for (structure_info.@"struct".fields) |field| {
         const field_type = blk: {
@@ -80,7 +80,7 @@ pub fn QueryParameters(comptime Structure: type) type {
         }
     }
 
-    const has_endorced_parameters = has_non_optional_fields;
+    const has_enforced_parameters = has_non_optional_fields;
 
     return struct {
         const QueryParametersType = @This();
@@ -90,7 +90,7 @@ pub fn QueryParameters(comptime Structure: type) type {
         data: Structure,
 
         pub fn parse(allocator: Allocator, request: *const Request, dest: *QueryParametersType) !void {
-            if (comptime has_endorced_parameters)
+            if (comptime has_enforced_parameters)
                 if (request.query == null)
                     return error.MissingQuery;
 
@@ -216,15 +216,15 @@ pub fn QueryParameters(comptime Structure: type) type {
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.query
 /// - `Type` must be able to generate `Type` using its declarations and function QueryParameters
 pub fn isQueryParameters(comptime Type: type) bool {
-    const is_resource_parameters = isResourceParameters(Type);
+    if (!isResourceParameters(Type))
+        return false;
 
     const is_query_parameters_type =
-        is_resource_parameters and
         Type.parameters_type == .query;
 
     const can_generate_self =
         is_query_parameters_type and
         QueryParameters(Type.structure) == Type;
 
-    return is_resource_parameters and is_query_parameters_type and can_generate_self;
+    return is_query_parameters_type and can_generate_self;
 }

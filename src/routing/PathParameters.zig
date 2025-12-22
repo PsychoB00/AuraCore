@@ -184,15 +184,15 @@ pub fn PathParameters(comptime Structure: type) type {
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.path
 /// - `Type` must be able to generate `Type` using its declarations and function PathParameters
 pub fn isPathParameters(comptime Type: type) bool {
-    const is_resource_parameters = isResourceParameters(Type);
+    if (!isResourceParameters(Type))
+        return false;
 
     const is_path_parameters_type =
-        is_resource_parameters and
         Type.parameters_type == .path;
 
     const can_generate_self =
         is_path_parameters_type and
         PathParameters(Type.structure) == Type;
 
-    return is_resource_parameters and is_path_parameters_type and can_generate_self;
+    return is_path_parameters_type and can_generate_self;
 }

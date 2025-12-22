@@ -19,6 +19,9 @@ const APIResource = core.routing.APIResource;
 
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
+const HeaderParameters = core.routing.HeaderParameters;
+const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
+const EnforcedHeaders = core.routing.EnforcedHeaders;
 const BodyParameters = core.routing.BodyParameters;
 
 /// Third Party
@@ -71,20 +74,14 @@ const ResourceTree = struct {
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn get(
-                    path_parameter: *const QueryParameters(
-                        struct {
-                            first: ?u64,
-                            second: []const u8 = "řeřicha",
-                        },
-                    ),
-                    context: *Context,
-                ) !StatusCode {
-                    context.logger.log(.debug).printFmt("{any} {s}", .{ path_parameter.data.first, path_parameter.data.second }).commit();
+                pub fn get() !StatusCode {
                     return .ok;
                 }
             },
-            .{ .authenticate = false },
+            .{
+                .authenticate = false,
+                .strict_headers = false,
+            },
         );
     };
 };
@@ -106,14 +103,6 @@ pub fn main() !void {
     var enviroment: Enviroment = undefined;
     try enviroment.initAll(allocator);
     defer enviroment.deinit();
-
-    var header: core.net.headers.Host = undefined;
-    var reader = std.Io.Reader.fixed("domain.%C5%99e%C5%99icha.com:3000");
-    try header.parse(&reader, allocator);
-    std.debug.print("{f}\n", .{header});
-
-    comptime if (!core.net.headers.isHttpHeader(core.net.headers.Host))
-        @compileError(std.fmt.comptimePrint("{}", .{!core.net.headers.isHttpHeader(core.net.headers.Host)}));
 
     var my_context = Context{
         .logger = undefined,

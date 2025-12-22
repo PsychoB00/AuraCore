@@ -13,6 +13,7 @@ const ResourceOptions = core.routing.ResourceOptions;
 
 const isPathParameters = core.routing.isPathParameters;
 const isQueryParameters = core.routing.isQueryParameters;
+const isHeaderParameters = core.routing.isHeaderParameters;
 const isBodyParameters = core.routing.isBodyParameters;
 const isContext = core.context.isContext;
 
@@ -24,12 +25,14 @@ const StatusCode = zap.http.StatusCode;
 pub const ParametersType = enum {
     path,
     query,
+    header,
     body,
 
     pub fn toString(comptime Type: ParametersType) []const u8 {
         switch (Type) {
             .path => return "Path",
             .query => return "Query",
+            .header => return "Header",
             .body => return "Body",
         }
     }
@@ -45,7 +48,8 @@ pub const ParametersType = enum {
 /// - `Type` must have field of its data named "data"
 ///     - `data` must be field of `structure`
 pub fn isResourceParameters(comptime Type: type) bool {
-    const is_struct = @typeInfo(Type) == .@"struct";
+    if (@typeInfo(Type) != .@"struct")
+        return false;
 
     const has_parameters_type =
         @hasDecl(Type, "parameters_type") and
@@ -60,7 +64,7 @@ pub fn isResourceParameters(comptime Type: type) bool {
         @hasField(Type, "data") and
         @FieldType(Type, "data") == Type.structure;
 
-    return is_struct and has_parameters_type and has_structure and has_data;
+    return has_parameters_type and has_structure and has_data;
 }
 
 /// Structure for binding `Controller` and `Options` together to define REST API resource
@@ -69,6 +73,7 @@ pub fn isResourceParameters(comptime Type: type) bool {
 /// - Every function can have one parameter typed:
 ///     - *const PathParameters
 ///     - *const QueryParameters
+///     - *const HeaderParameters
 ///     - *const BodyParameters
 ///     - *Context
 ///     - Allocator
@@ -126,6 +131,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                 // Parameters correctness assertion
                 var path_param_found = false;
                 var query_param_found = false;
+                var header_param_found = false;
                 var body_param_found = false;
                 var context_param_found = false;
                 var allocator_param_found = false;
@@ -170,6 +176,14 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                             .{ @typeName(Controller), decl.name },
                                         ));
                                     query_param_found = true;
+                                } else if (isHeaderParameters(param_info.child)) {
+                                    // Header parameters
+                                    if (header_param_found)
+                                        @compileError(comptimePrint(
+                                            "Duplicate Header parameters found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    header_param_found = true;
                                 } else if (isBodyParameters(param_info.child)) {
                                     // Body parameters
                                     if (body_param_found)
@@ -235,13 +249,13 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
             .{@typeName(Controller)},
         ));
 
-    const infereted_context_type = context_type;
+    const infered_context_type = context_type;
 
     return struct {
         const APIResourceType = @This();
         pub const controller_t = Controller;
         pub const options = Options;
-        pub const infered_context_t = infereted_context_type;
+        pub const infered_context_t = infered_context_type;
     };
 }
 

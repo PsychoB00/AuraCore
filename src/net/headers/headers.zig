@@ -57,7 +57,8 @@ pub fn validateRFCToken(token: []const u8) !void {
 ///         - fn (*Type, *Writer) anyerror!void
 ///         - fn (*Type, *Writer, Allocator) anyerror!void
 pub fn isHttpHeader(comptime Type: type) bool {
-    const is_struct = @typeInfo(Type) == .@"struct";
+    if (@typeInfo(Type) != .@"struct")
+        return false;
 
     const has_http_header_name =
         @hasDecl(Type, "http_header_name") and
@@ -81,8 +82,8 @@ pub fn isHttpHeader(comptime Type: type) bool {
 
     const has_parsing =
         hasMethod(Type, "parse") and
-        (@TypeOf(Type.parse) == fn (*Type, *Writer) anyerror!void or @TypeOf(Type.parse) == fn (*Type, *Writer, Allocator) anyerror!void);
+        (@TypeOf(Type.parse) == fn (*Type, *Reader) anyerror!void or @TypeOf(Type.parse) == fn (*Type, *Reader, Allocator) anyerror!void);
 
-    return is_struct and has_http_header_name and has_http_header_type and has_max_value_len and
+    return has_http_header_name and has_http_header_type and has_max_value_len and
         has_validation and has_formating and has_parsing;
 }

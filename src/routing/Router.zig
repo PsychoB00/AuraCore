@@ -18,17 +18,8 @@ const isOnRequestProcessor = core.routing.isOnRequestProcessor;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 
-/// Third Party
+/// Third party
 const zap = @import("zap");
-
-const ErrorStrategy = zap.Endpoint.ErrorStrategy;
-
-pub const ResourceOptions = struct {
-    /// Should endpoint requests for resources in this resource be authenticated by Router
-    authenticate: bool,
-    /// How should zap handle endpoint request error
-    error_strategy: ErrorStrategy = .log_to_console,
-};
 
 /// Router which constructs, authenticates and routes to `ResourceTree`
 ///
