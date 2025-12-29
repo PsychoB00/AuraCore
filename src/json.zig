@@ -12,6 +12,7 @@ const stringToEnum = std.meta.stringToEnum;
 const core = @import("core.zig");
 
 const fieldPtr = core.utils.fieldPtr;
+const assertValidate = core.utils.assertValidate;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -22,51 +23,36 @@ pub const ParseError = error{
 };
 
 /// Validates `Type` against AuraStandard
-pub fn validateJsonType(comptime Type: type) void {
+pub fn validateJsonType(comptime Type: type) !void {
     switch (@typeInfo(Type)) {
         .bool, .int, .float => {},
         .pointer => |info| {
             // For string, []const u8 is a slice and u8 is valid json type
             if (info.size != .slice)
-                @compileError(comptimePrint(
-                    "Non-slice pointer found as {}",
-                    .{Type},
-                ));
+                return error.NonslicePointer;
 
             return validateJsonType(info.child);
         },
         .optional => |info| return validateJsonType(info.child),
         .@"enum" => |info| {
             if (!info.is_exhaustive)
-                @compileError(comptimePrint(
-                    "Inexhaustive enum found as {}",
-                    .{Type},
-                ));
+                return error.InexhaustiveEnum;
         },
         .@"struct" => |info| {
             if (Type == Time)
                 return;
 
             if (info.is_tuple)
-                @compileError(comptimePrint(
-                    "Tuple found as {}",
-                    .{Type},
-                ));
+                return error.TupleFound;
 
             if (info.decls.len > 0)
-                @compileError(comptimePrint(
-                    "Structure with declaretions found as {}",
-                    .{Type},
-                ));
+                return error.DeclaretionsFound;
 
             for (info.fields) |field| {
                 return validateJsonType(field.type);
             }
         },
-        else => @compileError(comptimePrint(
-            "Unsupported type found as {}",
-            .{Type},
-        )),
+        else => return error.InvalidType,
     }
 }
 
@@ -74,7 +60,11 @@ pub fn validateJsonType(comptime Type: type) void {
 ///
 /// String values and array values allocated by this functions are owned by result, free them accordingly
 pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: Allocator) !Type {
-    comptime validateJsonType(Type);
+    comptime validateJsonType(Type) catch |err|
+        @compileError(comptimePrint(
+            "`Type` cannot be represented by json, cause {s}",
+            .{@errorName(err)},
+        ));
 
     switch (@typeInfo(Type)) {
         inline .bool => {

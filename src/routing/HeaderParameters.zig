@@ -209,7 +209,12 @@ pub fn HeaderParameters(comptime Structure: type) type {
 
         data: Structure,
 
-        pub fn parse(comptime Strict: bool, allocator: Allocator, request: *const Request, dest: *HeaderParametersType) !void {
+        pub fn parse(
+            comptime Strict: bool,
+            request: *const Request,
+            dest: *HeaderParametersType,
+            allocator: Allocator,
+        ) !void {
             var headers = try request.headersToOwnedList(allocator);
             defer headers.deinit();
 

@@ -89,7 +89,11 @@ pub fn QueryParameters(comptime Structure: type) type {
 
         data: Structure,
 
-        pub fn parse(allocator: Allocator, request: *const Request, dest: *QueryParametersType) !void {
+        pub fn parse(
+            request: *const Request,
+            dest: *QueryParametersType,
+            allocator: Allocator,
+        ) !void {
             if (comptime has_enforced_parameters)
                 if (request.query == null)
                     return error.MissingQuery;

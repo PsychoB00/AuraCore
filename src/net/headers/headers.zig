@@ -15,11 +15,15 @@ const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const trimStart = std.mem.trimStart;
 
 /// Aura
+const core = @import("../../core.zig");
+
 pub const Host = @import("Host.zig").Host;
 pub const UserAgent = @import("UserAgent.zig").UserAgent;
 
 pub const ContentLength = @import("ContentLength.zig").ContentLength;
 pub const ContentType = @import("ContentType.zig").ContentType;
+
+const validateJsonType = core.json.validateJsonType;
 
 pub const HttpHeaderType = enum {
     request,
@@ -65,8 +69,24 @@ pub const MediaType = union(MediaTypeTag) {
         json: void,
         wildcard: void,
 
+        pub fn validateType(comptime Self: AplicationSubtype, comptime Type: type) !void {
+            switch (Self) {
+                .json, .wildcard => try validateJsonType(Type),
+            }
+        }
+
         pub fn isWildcard(self: AplicationSubtype) bool {
             return self == .wildcard;
+        }
+
+        pub fn areOverlapping(a: AplicationSubtype, b: AplicationSubtype) bool {
+            if (a == .wildcard or b == .wildcard)
+                return true;
+
+            switch (a) {
+                .json => return b == .json,
+                .wildcard => unreachable,
+            }
         }
 
         pub fn format(self: AplicationSubtype, writer: *Writer) WriterError!void {
@@ -80,9 +100,9 @@ pub const MediaType = union(MediaTypeTag) {
             const application_subtype_value = try reader.takeDelimiterExclusive(';');
 
             if (eqlIgnoreCase(application_subtype_value, "json")) {
-                self.* = @unionInit(AplicationSubtype, "json", {});
+                self.* = .json;
             } else if (eql(u8, application_subtype_value, "*")) {
-                self.* = @unionInit(AplicationSubtype, "wildcard", {});
+                self.* = .wildcard;
             } else return error.InvalidApplicationSubtype;
         }
     };
@@ -155,8 +175,37 @@ pub const MediaType = union(MediaTypeTag) {
         html: ?Charset,
         wildcard: void,
 
+        pub fn validateType(comptime Self: TextSubtype, comptime Type: type) !void {
+            switch (Self) {
+                .plain => {
+                    if (Type != []const u8)
+                        return error.InvalidTextType;
+                },
+                .html, .wildcard => return error.UnimplementedParsing,
+            }
+        }
+
         pub fn isWildcard(self: TextSubtype) bool {
             return self == .wildcard;
+        }
+
+        pub fn areOverlapping(a: TextSubtype, b: TextSubtype) bool {
+            if (a == .wildcard or b == .wildcard)
+                return true;
+
+            switch (a) {
+                .plain => |plain| {
+                    if (b == .plain) {
+                        return plain == null or b.plain == null or plain.? == b.plain.?;
+                    } else return false;
+                },
+                .html => |html| {
+                    if (b == .html) {
+                        return html == null or b.html == null or html.? == b.html.?;
+                    } else return false;
+                },
+                .wildcard => unreachable,
+            }
         }
 
         pub fn format(self: TextSubtype, writer: *Writer) WriterError!void {
@@ -173,7 +222,7 @@ pub const MediaType = union(MediaTypeTag) {
                     if (html) |charset|
                         try writer.print("; {f}", .{charset});
                 },
-                .wildcard => try writer.writeByte("*"),
+                .wildcard => try writer.writeByte('*'),
             }
         }
 
@@ -181,13 +230,13 @@ pub const MediaType = union(MediaTypeTag) {
             const text_subtype_value = try reader.takeDelimiterExclusive(';');
 
             if (eqlIgnoreCase(text_subtype_value, "plain")) {
-                self.* = @unionInit(TextSubtype, "plain", null);
+                self.* = .{ .plain = null };
                 try Charset.tryParse(&self.plain, reader);
             } else if (eqlIgnoreCase(text_subtype_value, "html")) {
-                self.* = @unionInit(TextSubtype, "html", null);
-                try Charset.tryParse(&self.plain, reader);
+                self.* = .{ .html = null };
+                try Charset.tryParse(&self.html, reader);
             } else if (eql(u8, text_subtype_value, "*")) {
-                self.* = @unionInit(TextSubtype, "wildcard", {});
+                self.* = .wildcard;
             } else return error.InvalidTextSubtype;
         }
     };
@@ -198,11 +247,43 @@ pub const MediaType = union(MediaTypeTag) {
     text: TextSubtype,
     wildcard: void,
 
+    pub fn validateType(comptime Self: MediaType, comptime Type: type) !void {
+        switch (Self) {
+            .application => |application| try comptime AplicationSubtype.validateType(application, Type),
+            .text => |text| try comptime TextSubtype.validateType(text, Type),
+            .wildcard => {
+                try comptime AplicationSubtype.validateType(AplicationSubtype{ .wildcard = {} }, Type);
+                try comptime TextSubtype.validateType(TextSubtype{ .wildcard = {} }, Type);
+            },
+        }
+    }
+
     pub fn isWildcard(self: MediaType) bool {
         switch (self) {
             .application => |application| return application.isWildcard(),
             .text => |text| return text.isWildcard(),
             .wildcard => return true,
+        }
+    }
+
+    pub fn areOverlapping(a: MediaType, b: MediaType) bool {
+        if (a == .wildcard or b == .wildcard)
+            return true;
+
+        switch (a) {
+            .application => |application| {
+                if (b != .application)
+                    return false;
+
+                return application.areOverlapping(b.application);
+            },
+            .text => |text| {
+                if (b != .text)
+                    return false;
+
+                return text.areOverlapping(b.text);
+            },
+            .wildcard => unreachable,
         }
     }
 
@@ -235,9 +316,15 @@ pub const MediaType = union(MediaTypeTag) {
             if (wildcard_subtype != '*')
                 return error.InvalidWildcardSybtype;
 
-            self.* = @unionInit(MediaType, "wildcard", {});
+            self.* = .wildcard;
         } else return error.InvalidMediaType;
     }
+};
+
+pub const CommonMediaTypes = struct {
+    pub const all = MediaType{ .wildcard = {} };
+    pub const text = MediaType{ .text = .{ .plain = .utf_8 } };
+    pub const json = MediaType{ .application = .{ .json = {} } };
 };
 
 /// Trait check for HttpHeader

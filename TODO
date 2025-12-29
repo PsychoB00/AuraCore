@@ -11,21 +11,10 @@ documantation:
 testing:
     - [] Add at least some basic testing
 
-context:
-0.0.6:
-    - [x] Move Environment to context.zig
-
-utils:
-    - [x] Add config struct (for passing Allocator, Io, Timezone, env, etc.)
-    - [x] Fix namespacing
-
 units:
     - [] Create units
 
 log:
-0.0.5:
-    - [x] Find MaxLogLength for ConsoleLogProcessor buffer
-    - [x] Pass Environment to Logger and ConsoleLogProcessor
 0.0.14:
     - [x] Rework format parsing to Io
 0.0.15:
@@ -77,5 +66,7 @@ routing:
         - [x] Rework QueryParameters to use Io and does utf8 decoding
     - 0.0.19:
         - [x] Fix StaticRoute for EnforcedHeaders
+    - 0.0.21:
+        - [x] Add AllowedMediaTypes
     - Respose:
         - [] Create Response struct

@@ -39,5 +39,8 @@ pub const ContentType = struct {
         try self.media_type.parse(reader);
 
         try self.validate();
+
+        if (reader.bufferedLen() != 0)
+            return error.ExcessHeaderTail;
     }
 };

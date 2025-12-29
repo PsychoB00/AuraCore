@@ -23,6 +23,8 @@ const HeaderParameters = core.routing.HeaderParameters;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
 const BodyParameters = core.routing.BodyParameters;
+const MediaType = core.net.headers.MediaType;
+const CommonMediaTypes = core.net.headers.CommonMediaTypes;
 
 /// Third Party
 const zap = @import("zap");
@@ -80,7 +82,10 @@ const ResourceTree = struct {
             struct {
                 pub fn post(
                     header_params: *const HeaderParameters(EnforcedHeaders(.body)),
-                    body_params: *const BodyParameters([]const u8),
+                    body_params: *const BodyParameters(
+                        []const u8,
+                        MediaType{ .text = .{ .plain = .utf_8 } },
+                    ),
                 ) !StatusCode {
                     _ = header_params;
                     _ = body_params;

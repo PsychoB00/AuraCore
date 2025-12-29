@@ -80,7 +80,12 @@ pub fn PathParameters(comptime Structure: type) type {
 
         data: Structure,
 
-        pub fn parse(comptime StaticPath: []const u8, allocator: Allocator, request: *const Request, dest: *PathParametersType) !void {
+        pub fn parse(
+            comptime StaticPath: []const u8,
+            request: *const Request,
+            dest: *PathParametersType,
+            allocator: Allocator,
+        ) !void {
             // `StaticPath` correctness assertion
             comptime {
                 if (StaticPath.len == 0)

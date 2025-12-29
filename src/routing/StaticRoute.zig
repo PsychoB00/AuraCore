@@ -2,7 +2,6 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
-const Writer = std.Io.Writer;
 const Method = std.http.Method;
 const StructField = std.builtin.Type.StructField;
 
@@ -294,15 +293,68 @@ pub fn StaticRoute(
             var resource_parameters: resource_parameters_type = undefined;
 
             // Parse parameters
-            comptime var has_header_parameters: bool = false;
+            const resource_parameter_info = @typeInfo(resource_parameters_type);
+
+            comptime var header_parameters_field: ?StructField = null;
             comptime var has_body_parameters: bool = false;
 
-            inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
+            inline for (resource_parameter_info.@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
-                    inline .header => has_header_parameters = true,
+                    inline .header => header_parameters_field = field,
                     inline .body => has_body_parameters = true,
                     inline else => {},
                 }
+            }
+
+            // Parse EnforcedHeaders or HeaderParameters if `resource_parameters_type` has it
+            const header_parameters_type =
+                comptime if (header_parameters_field == null)
+                    HeaderParameters(
+                        EnforcedHeaders(
+                            EnforcedHeadersTag.generate(
+                                resource_options.authenticate,
+                                has_body_parameters,
+                            ),
+                        ),
+                    )
+                else
+                    header_parameters_field.?.type;
+            var header_parameters: header_parameters_type = undefined;
+            var header_parameters_ptr: *header_parameters_type = undefined;
+
+            if (comptime header_parameters_field != null) {
+                // Only EnforcedHeaders
+                header_parameters_type.parse(
+                    resource_options.strict_headers,
+                    request,
+                    &header_parameters,
+                    allocator,
+                ) catch |err| {
+                    if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                        processor.parametersInvalid(.header, err);
+                    request.setStatus(.bad_request);
+                    return;
+                };
+                header_parameters_ptr = &header_parameters;
+            } else {
+                // HeaderParameters
+                const parameters_ptr = fieldPtr(
+                    resource_parameters_type,
+                    header_parameters_field.?.name,
+                    &resource_parameters,
+                );
+                header_parameters_field.?.type.parse(
+                    resource_options.strict_headers,
+                    request,
+                    parameters_ptr,
+                    allocator,
+                ) catch |err| {
+                    if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                        processor.parametersInvalid(.header, err);
+                    request.setStatus(.bad_request);
+                    return;
+                };
+                header_parameters_ptr = parameters_ptr;
             }
 
             var query_parsed: ?bool = if (request.query == null) null else false;
@@ -318,7 +370,12 @@ pub fn StaticRoute(
                 switch (field.type.parameters_type) {
                     inline .path => {
                         // Path
-                        field.type.parse(Path, allocator, request, parameters_ptr) catch |err| {
+                        field.type.parse(
+                            Path,
+                            request,
+                            parameters_ptr,
+                            allocator,
+                        ) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.path, err);
                             request.setStatus(.not_found);
@@ -327,7 +384,11 @@ pub fn StaticRoute(
                     },
                     inline .query => {
                         // Query
-                        field.type.parse(allocator, request, parameters_ptr) catch |err| {
+                        field.type.parse(
+                            request,
+                            parameters_ptr,
+                            allocator,
+                        ) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.query, err);
                             request.setStatus(.not_found);
@@ -338,26 +399,16 @@ pub fn StaticRoute(
                     },
                     inline .header => {
                         // Header
-                        field.type.parse(resource_options.strict_headers, allocator, request, parameters_ptr) catch |err| {
-                            if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
-                                processor.parametersInvalid(.header, err);
-                            request.setStatus(.bad_request);
-                            return;
-                        };
-
-                        // Enforced headers validation
-                        if (comptime has_body_parameters) {
-                            if ((request.body orelse "").len != parameters_ptr.data.content_length.length) {
-                                if (comptime hasMethod(OnRequestProcessorType, "enforcedHeadersInvalid"))
-                                    processor.enforcedHeadersInvalid(error.InvalidContentLength);
-                                request.setStatus(.bad_request);
-                                return;
-                            }
-                        }
                     },
                     inline .body => {
                         // Body
-                        field.type.parse(allocator, request, parameters_ptr) catch |err| {
+                        field.type.parse(
+                            request,
+                            parameters_ptr,
+                            &header_parameters_ptr.data.content_length,
+                            &header_parameters_ptr.data.content_type,
+                            allocator,
+                        ) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.body, err);
                             request.setStatus(.bad_request);
@@ -366,36 +417,6 @@ pub fn StaticRoute(
 
                         body_parsed = true;
                     },
-                }
-            }
-
-            // Enforced parameters parsing
-            if (comptime !has_header_parameters) {
-                const header_parameters_type =
-                    HeaderParameters(
-                        EnforcedHeaders(
-                            EnforcedHeadersTag.generate(
-                                resource_options.authenticate,
-                                has_body_parameters,
-                            ),
-                        ),
-                    );
-                var header_parameters: header_parameters_type = undefined;
-
-                header_parameters_type.parse(resource_options.strict_headers, allocator, request, &header_parameters) catch |err| {
-                    if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
-                        processor.parametersInvalid(.header, err);
-                    request.setStatus(.bad_request);
-                    return;
-                };
-
-                if (comptime has_body_parameters) {
-                    if ((request.body orelse "").len != header_parameters.data.content_length.length) {
-                        if (comptime hasMethod(OnRequestProcessorType, "enforcedHeadersInvalid"))
-                            processor.enforcedHeadersInvalid(error.InvalidContentLength);
-                        request.setStatus(.bad_request);
-                        return;
-                    }
                 }
             }
 
