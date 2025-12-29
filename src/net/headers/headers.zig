@@ -7,12 +7,19 @@ const Writer = std.Io.Writer;
 const WriterError = Writer.Error;
 const Reader = std.Io.Reader;
 
+const assert = std.debug.assert;
 const isAlphanumeric = std.ascii.isAlphanumeric;
 const hasMethod = std.meta.hasMethod;
+const eql = std.mem.eql;
+const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
+const trimStart = std.mem.trimStart;
 
 /// Aura
 pub const Host = @import("Host.zig").Host;
 pub const UserAgent = @import("UserAgent.zig").UserAgent;
+
+pub const ContentLength = @import("ContentLength.zig").ContentLength;
+pub const ContentType = @import("ContentType.zig").ContentType;
 
 pub const HttpHeaderType = enum {
     request,
@@ -38,6 +45,200 @@ pub fn validateRFCToken(token: []const u8) !void {
         return error.InvalidCharacter;
     }
 }
+
+const MediaTypeTag = enum {
+    application,
+    text,
+    wildcard,
+};
+
+/// Http header token assosiated with Content-Type and Accept
+pub const MediaType = union(MediaTypeTag) {
+    const AplicationSubtypeTag = enum {
+        json,
+        wildcard,
+    };
+
+    const AplicationSubtype = union(AplicationSubtypeTag) {
+        pub const max_value_len: usize = 4;
+
+        json: void,
+        wildcard: void,
+
+        pub fn isWildcard(self: AplicationSubtype) bool {
+            return self == .wildcard;
+        }
+
+        pub fn format(self: AplicationSubtype, writer: *Writer) WriterError!void {
+            switch (self) {
+                .json => try writer.writeAll("json"),
+                .wildcard => try writer.writeByte('*'),
+            }
+        }
+
+        pub fn parse(self: *AplicationSubtype, reader: *Reader) anyerror!void {
+            const application_subtype_value = try reader.takeDelimiterExclusive(';');
+
+            if (eqlIgnoreCase(application_subtype_value, "json")) {
+                self.* = @unionInit(AplicationSubtype, "json", {});
+            } else if (eql(u8, application_subtype_value, "*")) {
+                self.* = @unionInit(AplicationSubtype, "wildcard", {});
+            } else return error.InvalidApplicationSubtype;
+        }
+    };
+
+    const TextSubtypeTag = enum {
+        plain,
+        html,
+        wildcard,
+    };
+
+    pub const TextSubtype = union(TextSubtypeTag) {
+        pub const Charset = enum {
+            const min_value_len: usize = 5;
+
+            pub const max_value_len: usize = 8;
+
+            utf_8,
+            us_ascii,
+
+            pub fn format(self: Charset, writer: *Writer) WriterError!void {
+                try writer.writeAll("charset=");
+
+                switch (self) {
+                    .utf_8 => try writer.writeAll("utf-8"),
+                    .us_ascii => try writer.writeAll("us-ascii"),
+                }
+            }
+
+            /// If charset value exists in reader this function will parse it
+            ///
+            /// - `self` must be pointing to null
+            pub fn tryParse(self: *?Charset, reader: *Reader) anyerror!void {
+                assert(self.* == null);
+
+                if (reader.bufferedLen() < 9 + min_value_len)
+                    // `reader` doesn't have minimum nessesary characters
+                    return;
+
+                const subtype_parameter_delimiter = try reader.peekByte();
+
+                if (subtype_parameter_delimiter != ';')
+                    return error.InvalidSubtypeParameterDelimiter;
+
+                const untrimed_parameter_name_value = reader.peekDelimiterInclusive('=') catch |err| switch (err) {
+                    error.EndOfStream => return,
+                    else => return err,
+                };
+
+                const parameter_name_value = trimStart(u8, untrimed_parameter_name_value[1..], " \t");
+
+                if (!eqlIgnoreCase(parameter_name_value, "charset="))
+                    // `reader` doesn't contain charset
+                    return;
+
+                reader.toss(untrimed_parameter_name_value.len);
+
+                const parameter_value_value = try reader.takeDelimiterExclusive(';');
+
+                if (eqlIgnoreCase(parameter_value_value, "utf-8")) {
+                    self.* = .utf_8;
+                } else if (eqlIgnoreCase(parameter_value_value, "us-ascii")) {
+                    self.* = .us_ascii;
+                } else return error.InvalidCharset;
+            }
+        };
+
+        pub const max_value_len: usize = 2 + Charset.max_value_len;
+
+        plain: ?Charset,
+        html: ?Charset,
+        wildcard: void,
+
+        pub fn isWildcard(self: TextSubtype) bool {
+            return self == .wildcard;
+        }
+
+        pub fn format(self: TextSubtype, writer: *Writer) WriterError!void {
+            switch (self) {
+                .plain => |plain| {
+                    try writer.writeAll("plain");
+
+                    if (plain) |charset|
+                        try writer.print("; {f}", .{charset});
+                },
+                .html => |html| {
+                    try writer.writeAll("html");
+
+                    if (html) |charset|
+                        try writer.print("; {f}", .{charset});
+                },
+                .wildcard => try writer.writeByte("*"),
+            }
+        }
+
+        pub fn parse(self: *TextSubtype, reader: *Reader) anyerror!void {
+            const text_subtype_value = try reader.takeDelimiterExclusive(';');
+
+            if (eqlIgnoreCase(text_subtype_value, "plain")) {
+                self.* = @unionInit(TextSubtype, "plain", null);
+                try Charset.tryParse(&self.plain, reader);
+            } else if (eqlIgnoreCase(text_subtype_value, "html")) {
+                self.* = @unionInit(TextSubtype, "html", null);
+                try Charset.tryParse(&self.plain, reader);
+            } else if (eql(u8, text_subtype_value, "*")) {
+                self.* = @unionInit(TextSubtype, "wildcard", {});
+            } else return error.InvalidTextSubtype;
+        }
+    };
+
+    pub const max_value_len: usize = 12 + AplicationSubtype.max_value_len;
+
+    application: AplicationSubtype,
+    text: TextSubtype,
+    wildcard: void,
+
+    pub fn isWildcard(self: MediaType) bool {
+        switch (self) {
+            .application => |application| return application.isWildcard(),
+            .text => |text| return text.isWildcard(),
+            .wildcard => return true,
+        }
+    }
+
+    pub fn format(self: MediaType, writer: *Writer) WriterError!void {
+        switch (self) {
+            .application => |application| try writer.print("application/{f}", .{application}),
+            .text => |text| try writer.print("text/{f}", .{text}),
+            .wildcard => try writer.writeAll("*/*"),
+        }
+    }
+
+    pub fn parse(self: *MediaType, reader: *Reader) anyerror!void {
+        const media_type_value = reader.takeDelimiterInclusive('/') catch |err| switch (err) {
+            error.EndOfStream => return error.InvalidTypeSubtypeDelimiter,
+            else => return err,
+        };
+
+        if (eqlIgnoreCase(media_type_value, "application/")) {
+            self.* = @unionInit(MediaType, "application", undefined);
+            try self.application.parse(reader);
+        } else if (eqlIgnoreCase(media_type_value, "text/")) {
+            self.* = @unionInit(MediaType, "text", undefined);
+            try self.text.parse(reader);
+        } else if (eql(u8, media_type_value, "*/")) {
+            if (reader.bufferedLen() < 1)
+                return error.MissingSubtype;
+
+            const wildcard_subtype = try reader.takeByte();
+
+            if (wildcard_subtype != '*')
+                return error.InvalidWildcardSybtype;
+
+            self.* = @unionInit(MediaType, "wildcard", {});
+        } else return error.InvalidMediaType;
+    }
+};
 
 /// Trait check for HttpHeader
 ///

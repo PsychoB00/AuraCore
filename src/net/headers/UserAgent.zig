@@ -141,7 +141,6 @@ pub const UserAgent = struct {
             } else {
                 // `reader` contains only name for current product
                 name_value = try reader.take(buffer_till_whitespace.len);
-                reader.toss(1);
                 version_value = null;
             }
 

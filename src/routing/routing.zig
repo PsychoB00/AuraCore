@@ -46,7 +46,7 @@ pub const ResourceOptions = struct {
     /// Should endpoint request for resource return error if headers in request aren't defined
     /// in resource. Usefull when working with browsers or if you don't have control over
     /// which headers are send
-    strict_headers: bool = true,
+    strict_headers: bool = false,
     /// How should zap handle endpoint request error
     error_strategy: ErrorStrategy = .log_to_console,
 };

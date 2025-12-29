@@ -61,26 +61,34 @@ const ResourceTree = struct {
         pub const hello_world = StaticResource(
             "zig-out/resources/hello_world.html",
             .{},
-            .{ .authenticate = false },
+            .{
+                .authenticate = false,
+            },
         );
     };
     pub const img = struct {
         pub const dome = StaticResource(
             "zig-out/resources/aura_dome.svg",
             .{},
-            .{ .authenticate = false },
+            .{
+                .authenticate = false,
+            },
         );
     };
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn get() !StatusCode {
+                pub fn post(
+                    header_params: *const HeaderParameters(EnforcedHeaders(.body)),
+                    body_params: *const BodyParameters([]const u8),
+                ) !StatusCode {
+                    _ = header_params;
+                    _ = body_params;
                     return .ok;
                 }
             },
             .{
                 .authenticate = false,
-                .strict_headers = false,
             },
         );
     };

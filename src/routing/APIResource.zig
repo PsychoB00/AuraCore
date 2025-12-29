@@ -10,6 +10,8 @@ const eql = std.mem.eql;
 const core = @import("../core.zig");
 
 const ResourceOptions = core.routing.ResourceOptions;
+const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
+const EnforcedHeaders = core.routing.EnforcedHeaders;
 
 const isPathParameters = core.routing.isPathParameters;
 const isQueryParameters = core.routing.isQueryParameters;
@@ -113,26 +115,26 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                         function_names
                     else
                         function_names[1..];
-                var valid_method_name_found = false;
+                var valid_method_name_found: ?[]const u8 = null;
 
                 for (checked_method_name) |name| methode_name_loop: {
                     if (eql(u8, name, decl.name)) {
                         has_methods = !eql(u8, "unauthorized", decl.name);
-                        valid_method_name_found = true;
+                        valid_method_name_found = decl.name;
                         break :methode_name_loop;
                     }
                 }
-                if (!valid_method_name_found)
+                if (valid_method_name_found == null)
                     @compileError(comptimePrint(
                         "Function with unsupported name ({s}) found in {s}",
                         .{ decl.name, @typeName(Controller) },
                     ));
 
                 // Parameters correctness assertion
-                var path_param_found = false;
-                var query_param_found = false;
-                var header_param_found = false;
-                var body_param_found = false;
+                var path_param_found: ?type = null;
+                var query_param_found: ?type = null;
+                var header_param_found: ?type = null;
+                var body_param_found: ?type = null;
                 var context_param_found = false;
                 var allocator_param_found = false;
 
@@ -162,36 +164,36 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                             if (param_info.is_const) {
                                 if (isPathParameters(param_info.child)) {
                                     // Path parameters
-                                    if (path_param_found)
+                                    if (path_param_found != null)
                                         @compileError(comptimePrint(
                                             "Duplicate Path parameters found in {s}.{s}",
                                             .{ @typeName(Controller), decl.name },
                                         ));
-                                    path_param_found = true;
+                                    path_param_found = param_info.child;
                                 } else if (isQueryParameters(param_info.child)) {
                                     // Query parameters
-                                    if (query_param_found)
+                                    if (query_param_found != null)
                                         @compileError(comptimePrint(
                                             "Duplicate Query parameters found in {s}.{s}",
                                             .{ @typeName(Controller), decl.name },
                                         ));
-                                    query_param_found = true;
+                                    query_param_found = param_info.child;
                                 } else if (isHeaderParameters(param_info.child)) {
                                     // Header parameters
-                                    if (header_param_found)
+                                    if (header_param_found != null)
                                         @compileError(comptimePrint(
                                             "Duplicate Header parameters found in {s}.{s}",
                                             .{ @typeName(Controller), decl.name },
                                         ));
-                                    header_param_found = true;
+                                    header_param_found = param_info.child;
                                 } else if (isBodyParameters(param_info.child)) {
                                     // Body parameters
-                                    if (body_param_found)
+                                    if (body_param_found != null)
                                         @compileError(comptimePrint(
                                             "Duplicate Body parameters found in {s}.{s}",
                                             .{ @typeName(Controller), decl.name },
                                         ));
-                                    body_param_found = true;
+                                    body_param_found = param_info.child;
                                 } else @compileError(comptimePrint(
                                     "Unsupported parameter type found in {s}.{s}",
                                     .{ @typeName(Controller), decl.name },
@@ -219,6 +221,21 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                         )),
                     }
                 }
+
+                const enforced_headers =
+                    EnforcedHeaders(
+                        EnforcedHeadersTag.generate(
+                            Options.authenticate,
+                            body_param_found != null,
+                        ),
+                    );
+
+                if (header_param_found) |header_parameters_type|
+                    if (header_parameters_type.infered_enforced_headers_t != enforced_headers)
+                        @compileError(comptimePrint(
+                            "Infered enforced headers of a APIResource ({s}) is different then observed enforced headers, found in {s}",
+                            .{ @typeName(@This()), valid_method_name_found.? },
+                        ));
 
                 // Return type correctness assertion
                 if (info.return_type == null)

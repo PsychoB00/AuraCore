@@ -15,6 +15,8 @@ const ParametersType = core.routing.ParametersType;
 
 const Host = core.net.headers.Host;
 const UserAgent = core.net.headers.UserAgent;
+const ContentLength = core.net.headers.ContentLength;
+const ContentType = core.net.headers.ContentType;
 
 const fieldPtr = core.utils.fieldPtr;
 const isResourceParameters = core.routing.isResourceParameters;
@@ -28,10 +30,19 @@ const Request = zap.Request;
 const enforcable_headers = [_]type{
     Host,
     UserAgent,
+    ContentLength,
+    ContentType,
 };
 
-pub const EnforcedHeadersTag = enum {
+pub const EnforcedHeadersTag = enum(u2) {
     default,
+    body,
+    auth,
+    body_auth,
+
+    pub fn generate(comptime HasAuthentication: bool, comptime HasBodyParameters: bool) EnforcedHeadersTag {
+        return @enumFromInt((@as(u2, @intFromBool(HasAuthentication)) << 1) | @as(u2, @intFromBool(HasBodyParameters)));
+    }
 };
 
 pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
@@ -42,6 +53,33 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
 
             host: Host,
             user_agent: UserAgent,
+        },
+        // body = body, no auth
+        .body => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            content_length: ContentLength,
+            content_type: ContentType,
+        },
+        // auth = no body, auth
+        .auth => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+        },
+        // body_auth = body, auth
+        .body_auth => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            content_length: ContentLength,
+            content_type: ContentType,
         },
     };
 }
@@ -154,6 +192,7 @@ pub fn HeaderParameters(comptime Structure: type) type {
         }
 
         enforced_headers_type = enforced_headers;
+        break;
     }
 
     if (enforced_headers_type == null)
@@ -190,7 +229,10 @@ pub fn HeaderParameters(comptime Structure: type) type {
                     var reader = Reader.fixed(header.value);
 
                     const field_ptr = fieldPtr(Structure, field.name, &dest.data);
-                    try field_ptr.parse(&reader, allocator);
+                    if (comptime @TypeOf(field_type.parse) == fn (*field_type, *Reader) anyerror!void)
+                        try field_ptr.parse(&reader)
+                    else
+                        try field_ptr.parse(&reader, allocator);
 
                     assigned_fields[index] = true;
                     break :headers_loop;

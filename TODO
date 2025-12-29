@@ -46,10 +46,10 @@ net:
         [x] Fix Host parsing and formating encoding
     - 0.0.19:
         [x] Fix isHttpHeader
-        [] Add Content-Length
-        [] Add Content-Type
+        [x] Add Content-Length
+        [x] Add Content-Type
         [] Add Authorization
-        [] Define every EnforcedHeaders
+        [o] Define every EnforcedHeaders
 
 routing:
     - Router:
@@ -76,6 +76,6 @@ routing:
     - 0.0.16:
         - [x] Rework QueryParameters to use Io and does utf8 decoding
     - 0.0.19:
-        - [] Fix StaticRoute for EnforcedHeaders
+        - [x] Fix StaticRoute for EnforcedHeaders
     - Respose:
         - [] Create Response struct

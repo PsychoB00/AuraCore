@@ -49,14 +49,25 @@ pub fn BodyParameters(comptime Structure: type) type {
                 } else return error.MissingBody;
 
             dest.data = try allocator.dupe(u8, request.body.?);
-
-            return error.UnsupportedContentType;
         }
     };
 }
 
+/// Trait check for BodyParameters
+///
+/// - `Type` must fullfil the isResourceParameters trait check
+/// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.body
+/// - `Type` must be able to generate `Type` using its declarations and function BodyParameters
 pub fn isBodyParameters(comptime Type: type) bool {
-    return isResourceParameters(Type) and Type.parameters_type == .body and
-        @hasDecl(Type, "supported_content_types") and
-        BodyParameters(Type.structure, Type.supported_content_types) == Type;
+    if (!isResourceParameters(Type))
+        return false;
+
+    const is_body_parameters_type =
+        Type.parameters_type == .body;
+
+    const can_generate_self =
+        is_body_parameters_type and
+        BodyParameters(Type.structure) == Type;
+
+    return is_body_parameters_type and can_generate_self;
 }

@@ -6,7 +6,6 @@ const Writer = std.Io.Writer;
 const Method = std.http.Method;
 const StructField = std.builtin.Type.StructField;
 
-const hasFn = std.meta.hasFn;
 const hasMethod = std.meta.hasMethod;
 const eql = std.mem.eql;
 const cwd = std.fs.cwd;
@@ -24,6 +23,7 @@ const isResourceParameters = core.routing.isResourceParameters;
 const methodToLower = core.net.methodToLower;
 
 const HeaderParameters = core.routing.HeaderParameters;
+const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
 
 /// Third Party
@@ -202,14 +202,14 @@ pub fn StaticRoute(
             defer processor.deinit();
 
             if (comptime !(MethodType == .GET or MethodType == .HEAD)) {
-                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                     processor.requestInvalid(error.UnsupportedMethod);
                 request.setStatus(.method_not_allowed);
                 return;
             }
 
             if (request.path == null or request.path.?.len != Path.len) {
-                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                     processor.requestInvalid(error.MalformedPath);
                 request.setStatus(.not_found);
                 return;
@@ -218,34 +218,34 @@ pub fn StaticRoute(
             if (comptime MethodType == .GET) {
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
                 const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
-                    if (comptime hasFn(OnRequestProcessorType, "readFileError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "readFileError"))
                         processor.readFileError(err);
                     request.setStatus(.internal_server_error);
                     return;
                 };
                 if (body.len >= body_buffer.len) {
-                    if (comptime hasFn(OnRequestProcessorType, "readFileError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "readFileError"))
                         processor.readFileError(error.FileToBig);
                     request.setStatus(.internal_server_error);
                     return;
                 }
 
                 _setStaticResourceHeaders(body.len, request) catch |err| {
-                    if (comptime hasFn(OnRequestProcessorType, "setHeadersError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "setHeadersError"))
                         processor.setHeadersError(err);
                     request.setStatus(.internal_server_error);
                     return;
                 };
 
                 request.sendBody(body) catch |err| {
-                    if (comptime hasFn(OnRequestProcessorType, "sendBodyError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "sendBodyError"))
                         processor.sendBodyError(err);
                     request.setStatus(.internal_server_error);
                     return;
                 };
             } else if (comptime MethodType == .HEAD) {
                 _setStaticResourceHeaders(0, request) catch |err| {
-                    if (comptime hasFn(OnRequestProcessorType, "setHeadersError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "setHeadersError"))
                         processor.setHeadersError(err);
                     request.setStatus(.internal_server_error);
                     return;
@@ -274,13 +274,13 @@ pub fn StaticRoute(
             processor.init(StaticRouteType, MethodType, allocator, context, request);
             defer processor.deinit();
 
-            if (comptime !hasFn(ResourceType.controller_t, methodToLower(MethodType))) {
+            if (comptime !hasMethod(ResourceType.controller_t, methodToLower(MethodType))) {
                 if (comptime MethodType == .GET or MethodType == .HEAD) {
-                    if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                         processor.requestInvalid(error.NotFound);
                     request.setStatus(.not_found);
                 } else {
-                    if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                    if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                         processor.requestInvalid(error.NotImplemented);
                     request.setStatus(.not_implemented);
                 }
@@ -295,6 +295,15 @@ pub fn StaticRoute(
 
             // Parse parameters
             comptime var has_header_parameters: bool = false;
+            comptime var has_body_parameters: bool = false;
+
+            inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
+                switch (field.type.parameters_type) {
+                    inline .header => has_header_parameters = true,
+                    inline .body => has_body_parameters = true,
+                    inline else => {},
+                }
+            }
 
             var query_parsed: ?bool = if (request.query == null) null else false;
             var body_parsed: ?bool = if (request.body == null) null else false;
@@ -308,6 +317,7 @@ pub fn StaticRoute(
 
                 switch (field.type.parameters_type) {
                     inline .path => {
+                        // Path
                         field.type.parse(Path, allocator, request, parameters_ptr) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.path, err);
@@ -316,6 +326,7 @@ pub fn StaticRoute(
                         };
                     },
                     inline .query => {
+                        // Query
                         field.type.parse(allocator, request, parameters_ptr) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.query, err);
@@ -326,16 +337,26 @@ pub fn StaticRoute(
                         query_parsed = true;
                     },
                     inline .header => {
-                        has_header_parameters = true;
-
+                        // Header
                         field.type.parse(resource_options.strict_headers, allocator, request, parameters_ptr) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.header, err);
                             request.setStatus(.bad_request);
                             return;
                         };
+
+                        // Enforced headers validation
+                        if (comptime has_body_parameters) {
+                            if ((request.body orelse "").len != parameters_ptr.data.content_length.length) {
+                                if (comptime hasMethod(OnRequestProcessorType, "enforcedHeadersInvalid"))
+                                    processor.enforcedHeadersInvalid(error.InvalidContentLength);
+                                request.setStatus(.bad_request);
+                                return;
+                            }
+                        }
                     },
                     inline .body => {
+                        // Body
                         field.type.parse(allocator, request, parameters_ptr) catch |err| {
                             if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
                                 processor.parametersInvalid(.body, err);
@@ -348,8 +369,17 @@ pub fn StaticRoute(
                 }
             }
 
+            // Enforced parameters parsing
             if (comptime !has_header_parameters) {
-                const header_parameters_type = HeaderParameters(EnforcedHeaders(.default));
+                const header_parameters_type =
+                    HeaderParameters(
+                        EnforcedHeaders(
+                            EnforcedHeadersTag.generate(
+                                resource_options.authenticate,
+                                has_body_parameters,
+                            ),
+                        ),
+                    );
                 var header_parameters: header_parameters_type = undefined;
 
                 header_parameters_type.parse(resource_options.strict_headers, allocator, request, &header_parameters) catch |err| {
@@ -358,16 +388,25 @@ pub fn StaticRoute(
                     request.setStatus(.bad_request);
                     return;
                 };
+
+                if (comptime has_body_parameters) {
+                    if ((request.body orelse "").len != header_parameters.data.content_length.length) {
+                        if (comptime hasMethod(OnRequestProcessorType, "enforcedHeadersInvalid"))
+                            processor.enforcedHeadersInvalid(error.InvalidContentLength);
+                        request.setStatus(.bad_request);
+                        return;
+                    }
+                }
             }
 
             if (!(query_parsed orelse true)) {
-                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                     processor.requestInvalid(error.ExcessQuery);
                 request.setStatus(.not_found);
                 return;
             }
             if (!(body_parsed orelse true)) {
-                if (comptime hasFn(OnRequestProcessorType, "requestInvalid"))
+                if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
                     processor.requestInvalid(error.ExcessBody);
                 request.setStatus(.bad_request);
                 return;
@@ -387,7 +426,7 @@ pub fn StaticRoute(
 
             if (comptime @typeInfo(@TypeOf(call_result)) == .error_union) {
                 const status = call_result catch |err| {
-                    if (comptime hasFn(OnRequestProcessorType, "handlerError"))
+                    if (comptime hasMethod(OnRequestProcessorType, "handlerError"))
                         processor.handlerError(err);
                     request.setStatus(.internal_server_error);
                     return;

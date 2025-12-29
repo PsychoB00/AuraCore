@@ -100,6 +100,17 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 log.print("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters");
         }
 
+        pub fn enforcedHeadersInvalid(self: *OnRequestProcessorType, err: anyerror) void {
+            var log = self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Request with invalid enforced headers. Cause: {s}", .{@errorName(err)}) catch
+                log.print("Request with invalid enforced headers");
+        }
+
         pub fn readFileError(self: *OnRequestProcessorType, err: anyerror) void {
             var log = self.logger
                 .log(.err)
