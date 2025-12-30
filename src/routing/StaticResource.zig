@@ -38,10 +38,35 @@ pub fn StaticResource(comptime FilePath: []const u8, comptime SROptions: StaticR
     };
 }
 
+/// Trait check for StaticResource
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration for relative filepath which it is using, named "file_path"
+///     - `file_path` must be declaration of []const u8
+/// - `Type` must have declaration for static resource options which it uses, named "sr_options"
+///     - `sr_options` must be declaration of StaticResourceOptions
+/// - `Type` must have declaration for options which it uses, named "options"
+///     - `options` must be declaration of ResourceOptions
+/// - `Type` must be able to generate `Type` using its declarations and function StaticResource
 pub fn isStaticResource(comptime Type: type) bool {
-    return @hasDecl(Type, "file_path") and @TypeOf(Type.file_path) == []const u8 and
-        @hasDecl(Type, "file_extention") and @TypeOf(Type.file_extention) == []const u8 and
-        @hasDecl(Type, "sr_options") and @TypeOf(Type.sr_options) == StaticResourceOptions and
-        @hasDecl(Type, "options") and @TypeOf(Type.options) == ResourceOptions and
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_file_path =
+        @hasDecl(Type, "file_path") and
+        @TypeOf(Type.file_path) == []const u8;
+
+    const has_static_resource_options =
+        @hasDecl(Type, "sr_options") and
+        @TypeOf(Type.sr_options) == StaticResourceOptions;
+
+    const has_options =
+        @hasDecl(Type, "options") and
+        @TypeOf(Type.options) == ResourceOptions;
+
+    const can_generate_self =
+        has_file_path and has_static_resource_options and has_options and
         StaticResource(Type.file_path, Type.sr_options, Type.options) == Type;
+
+    return can_generate_self;
 }

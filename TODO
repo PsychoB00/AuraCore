@@ -41,19 +41,7 @@ net:
         [o] Define every EnforcedHeaders
 
 routing:
-    - Router:
-    - 0.0.7:
-        - [x] Fix the bad/unexpresive error handeling
-        - [x] Change the passing of allocator in *const Allocator to Allocator
-    - 0.0.10:
-        - [x] Remove Request parameter from StaticRoute
     - resources:
-    - 0.0.9:
-        - [x] Add Cache-Control to StaticResource
-        - [x] Add other nessesary headers to StaticResource
-    - 0.0.10:
-        - [x] Remove Request parameter from APIResource
-        - [x] Add HeaderParameters for APIResource
     - 0.0.12:
         - [o] Fix StaticResource for headers rework
         - [o] Fix APIResource for headers rework

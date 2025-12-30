@@ -95,7 +95,6 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
 
         data: Structure,
 
-        /// Parse BodyParameters from `request` and validate
         pub fn parse(
             request: *const Request,
             dest: *BodyParametersType,
@@ -130,9 +129,6 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
                     switch (application) {
                         .json => {
                             // JSON
-                            (comptime @TypeOf(application).validateType(@TypeOf(application){ .json = {} }, structure_type)) catch
-                                return error.RuntimeUnreachable;
-
                             if (!utf8ValidateSlice(request.body.?))
                                 return error.InvalidEncoding;
 
@@ -150,6 +146,10 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
                     switch (text) {
                         .plain => |plain| {
                             // Plain text
+                            // NOTE: This is nessesary because I can't figure out how to get comptime evaluated switch for allowed media type,
+                            //       meaning that I have to "prune" branches from inside manually. Otherwise assigning to
+                            //       `dest.data` will lead to an compilation error because although the state can't never occur during runtime,
+                            //       it is still evaluated during compilation so there is assigned type missmatch.
                             (comptime @TypeOf(text).validateType(@TypeOf(text){ .plain = null }, structure_type)) catch
                                 return error.RuntimeUnreachable;
 

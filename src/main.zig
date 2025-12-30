@@ -47,30 +47,11 @@ const Logger = core.log.Logger(Log, LogProcessor, LoggerOptions);
 const Context = struct {
     logger: Logger,
 };
-const Color = enum {
-    red,
-    green,
-    blue,
-};
-const ItemModel = struct {
-    id: u64,
-    name: []const u8,
-    color: ?Color,
-};
 
 const ResourceTree = struct {
     pub const pages = struct {
         pub const hello_world = StaticResource(
             "zig-out/resources/hello_world.html",
-            .{},
-            .{
-                .authenticate = false,
-            },
-        );
-    };
-    pub const img = struct {
-        pub const dome = StaticResource(
-            "zig-out/resources/aura_dome.svg",
             .{},
             .{
                 .authenticate = false,

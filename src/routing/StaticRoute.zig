@@ -209,10 +209,34 @@ pub fn StaticRoute(
 
             if (request.path == null or request.path.?.len != Path.len) {
                 if (comptime hasMethod(OnRequestProcessorType, "requestInvalid"))
-                    processor.requestInvalid(error.MalformedPath);
+                    processor.requestInvalid(error.InvalidPath);
                 request.setStatus(.not_found);
                 return;
             }
+
+            // Enforced headers parsing
+            const enforced_headers_type =
+                HeaderParameters(
+                    EnforcedHeaders(
+                        EnforcedHeadersTag.generate(
+                            resource_options.authenticate,
+                            false,
+                        ),
+                    ),
+                );
+            var enforced_headers: enforced_headers_type = undefined;
+
+            enforced_headers_type.parse(
+                resource_options.strict_headers,
+                request,
+                &enforced_headers,
+                allocator,
+            ) catch |err| {
+                if (comptime hasMethod(OnRequestProcessorType, "parametersInvalid"))
+                    processor.parametersInvalid(.header, err);
+                request.setStatus(.bad_request);
+                return;
+            };
 
             if (comptime MethodType == .GET) {
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;

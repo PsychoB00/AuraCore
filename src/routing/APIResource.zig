@@ -276,8 +276,29 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
     };
 }
 
+/// Trait check for APIResource
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration for type of controller which it is using, named "controller_t"
+///     - `controller_t` must be declaration of type
+/// - `Type` must have declaration for options which it uses, named "options"
+///     - `options` must be declaration of ResourceOptions
+/// - `Type` must be able to generate `Type` using its declarations and function APIResource
 pub fn isAPIResource(comptime Type: type) bool {
-    return @hasDecl(Type, "controller_t") and @TypeOf(Type.controller_t) == type and
-        @hasDecl(Type, "options") and @TypeOf(Type.options) == ResourceOptions and
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_controller_type =
+        @hasDecl(Type, "controller_t") and
+        @TypeOf(Type.controller_t) == type;
+
+    const has_options =
+        @hasDecl(Type, "options") and
+        @TypeOf(Type.options) == ResourceOptions;
+
+    const can_generate_self =
+        has_controller_type and has_options and
         APIResource(Type.controller_t, Type.options) == Type;
+
+    return can_generate_self;
 }
