@@ -23,6 +23,8 @@ pub const UserAgent = @import("UserAgent.zig").UserAgent;
 pub const ContentLength = @import("ContentLength.zig").ContentLength;
 pub const ContentType = @import("ContentType.zig").ContentType;
 
+pub const Authorization = @import("Authorization.zig").Authorization;
+
 const validateJsonType = core.json.validateJsonType;
 
 pub const HttpHeaderType = enum {

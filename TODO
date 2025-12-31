@@ -37,7 +37,7 @@ net:
         [x] Fix isHttpHeader
         [x] Add Content-Length
         [x] Add Content-Type
-        [] Add Authorization
+        [x] Add Authorization
         [o] Define every EnforcedHeaders
 
 routing:
