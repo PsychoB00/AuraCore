@@ -19,7 +19,7 @@ const toUpper = std.ascii.toUpper;
 /// Aura
 const core = @import("core.zig");
 
-const Enviroment = core.context.Environment;
+const Environment = core.context.Environment;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -212,8 +212,8 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
 
         /// Initialize Logger
         ///
-        /// Logger doesn't keep `enviroment`, it's passed to LogProcessor
-        pub fn init(self: *LoggerType, enviroment: *Enviroment) void {
+        /// Logger doesn't keep `environment`, it's passed to LogProcessor
+        pub fn init(self: *LoggerType, environment: *Environment) void {
             self.thread_running = atomic(bool).init(false);
             self.thread = null;
 
@@ -222,7 +222,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
             self.log_pool = null;
             self.reserve_index = null;
 
-            self.log_processor.init(enviroment);
+            self.log_processor.init(environment);
         }
 
         /// Spawn collecting thread and sync with it
@@ -821,11 +821,11 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
 
         /// Initialize ConsoleLogProcessor
         ///
-        /// `enviroment.time_zone` is required, NEVER pass null
-        pub fn init(self: *LogProcessorType, enviroment: *Enviroment) void {
-            assert(enviroment.time_zone != null);
+        /// `environment.time_zone` is required, NEVER pass null
+        pub fn init(self: *LogProcessorType, environment: *Environment) void {
+            assert(environment.time_zone != null);
 
-            self.timezone = &enviroment.time_zone.?;
+            self.timezone = &environment.time_zone.?;
             self.out_writer = std.fs.File.stdout().writer(&self.buffer);
         }
 
@@ -855,7 +855,7 @@ pub fn ConsoleLogProcessor(comptime LogType: type, comptime Options: LogFmtOptio
 ///     - `log_t` must be declaration of a type
 ///     - `log_t` must fulfill trait check `isLog`
 /// - `Type` must have method declaration named "init"
-///     - `init` must have function signiture of fn (*Type, *Enviroment) void
+///     - `init` must have function signiture of fn (*Type, *Environment) void
 /// - `Type` must have method declaration named "processLog"
 ///     - `processLog` must have function signiture of fn (*Type, *const Type.log_t) void
 pub fn isLogProcessor(comptime Type: type) bool {
@@ -869,7 +869,7 @@ pub fn isLogProcessor(comptime Type: type) bool {
 
     const has_init =
         hasMethod(Type, "init") and
-        @TypeOf(Type.init) == fn (*Type, *Enviroment) void;
+        @TypeOf(Type.init) == fn (*Type, *Environment) void;
 
     const has_process_log =
         hasMethod(Type, "processLog") and

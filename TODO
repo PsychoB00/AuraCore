@@ -14,6 +14,12 @@ testing:
 units:
     - [] Create units
 
+application:
+    - [x] Create Application
+
+context:
+    - [x] Add init and deinit to Context
+
 log:
 0.0.14:
     - [x] Rework format parsing to Io
@@ -27,7 +33,7 @@ json:
 
 net:
     - headers:
-        [o] Headers rework
+        [x] Headers rework
         [x] Add Host
     - 0.0.18:
         [x] Add User-Agent
@@ -38,13 +44,22 @@ net:
         [x] Add Content-Length
         [x] Add Content-Type
         [x] Add Authorization
-        [o] Define every EnforcedHeaders
+        [x] Define every EnforcedHeaders
 
 routing:
+    - router:
+        - [o] Rework authorization
+        - [x] Add isRouter trait check
+    - OnRequestProcessor:
+        - [x] Rework the trait check
+        - [x] Add option to have OnRequestProcessor == null in Router
+        - [] Rework error functions to also state what is the status code of response
+    - AuthorizationProcessor:
+        - [] Finish JWTAuthorizationProcessor
     - resources:
     - 0.0.12:
-        - [o] Fix StaticResource for headers rework
-        - [o] Fix APIResource for headers rework
+        - [x] Fix StaticResource for headers rework
+        - [x] Fix APIResource for headers rework
     - 0.0.14:
         - [x] Rework PathParameters, QueryParameters and BodyParameters to use Io
     - 0.0.15:

@@ -100,6 +100,15 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 log.print("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters");
         }
 
+        pub fn unauthorized(self: *OnRequestProcessorType) void {
+            self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
+                .print("Request with invalid authorization")
+                .commit();
+        }
+
         pub fn enforcedHeadersInvalid(self: *OnRequestProcessorType, err: anyerror) void {
             var log = self.logger
                 .log(.err)
@@ -172,16 +181,39 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 .{ @intFromEnum(Status), core.net.statusCodeToUpper(Status) },
             );
 
-            _ = log.printTryFmt("Request handeled succesfully in {}ms and responded with " ++ status_string, .{elapsed_time}) catch
-                log.print("Request handeled succesfully and responded with " ++ status_string);
+            _ = log.printTryFmt("Request handeled succesfully in {}ms, responded with " ++ status_string, .{elapsed_time}) catch
+                log.print("Request handeled succesfully, responded with " ++ status_string);
         }
 
         pub fn deinit(_: *OnRequestProcessorType) void {}
     };
 }
 
+/// Trait check for OnRequestProcessor
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration of what context type it is using, named "context_t"
+///     - `context_t` must be decleration of type
+/// - `Type` must have declaration of method for initializing, named "init"
+///     - `init` must be decleration of method with signature fn (*Type, comptime type, comptime Method, Allocator, *Type.context_t, *const Request) void
+/// - `Type` must have declaration of method for deinitializing, named "deinit"
+///     - `deinit` must be decleration of method with signature fn (*Type) void
 pub fn isOnRequestProcessor(comptime Type: type) bool {
-    return @hasDecl(Type, "context_t") and @TypeOf(Type.context_t) == type and
-        hasMethod(Type, "init") and @TypeOf(Type.init) == fn (*Type, comptime type, comptime Method, Allocator, *Type.context_t, *const Request) void and
-        hasMethod(Type, "deinit") and @TypeOf(Type.deinit) == fn (*Type) void;
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_context_type =
+        @hasDecl(Type, "context_t") and
+        @TypeOf(Type.context_t) == type;
+
+    const has_init =
+        has_context_type and
+        hasMethod(Type, "init") and
+        @TypeOf(Type.init) == fn (*Type, comptime type, comptime Method, Allocator, *Type.context_t, *const Request) void;
+
+    const has_deinit =
+        hasMethod(Type, "deinit") and
+        @TypeOf(Type.deinit) == fn (*Type) void;
+
+    return has_init and has_deinit;
 }

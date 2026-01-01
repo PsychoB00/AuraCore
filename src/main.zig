@@ -7,10 +7,12 @@ const Writer = std.Io.Writer;
 /// Aura
 const core = @import("core.zig");
 
-const Enviroment = core.context.Environment;
+const Environment = core.context.Environment;
+
+const ApplicationType = core.application.Application;
 
 const RouterType = core.routing.Router;
-const JWTAuthenticator = core.jwt.JWTAuthenticator;
+const JWTAuthorizationProcessor = core.routing.JWTAuthorizationProcessor;
 const LoggingOnRequestProcessor = core.routing.LoggingOnRequestProcessor;
 
 const ResourceOptions = core.routing.ResourceOptions;
@@ -43,11 +45,36 @@ const Log = core.log.Log(LogOptions);
 const LogProcessor = core.log.ConsoleLogProcessor(Log, LogFmtOptions, null);
 const Logger = core.log.Logger(Log, LogProcessor, LoggerOptions);
 
-/// App
-const Context = struct {
-    logger: Logger,
+/// Context
+pub const ClaimsSet = struct {
+    sub: []const u8,
+    iat: i64,
+    exp: i64,
 };
 
+const Context = struct {
+    environment: Environment,
+    jwt_key: []const u8,
+    logger: Logger,
+
+    pub fn init(self: *Context, allocator: Allocator) anyerror!void {
+        try self.environment.initAll(allocator);
+        self.jwt_key = "12345";
+        self.logger.init(&self.environment);
+
+        try self.logger.spawn();
+    }
+
+    pub fn deinit(self: *Context, allocator: Allocator) void {
+        _ = allocator;
+
+        self.logger.join();
+
+        self.environment.deinit();
+    }
+};
+
+/// App
 const ResourceTree = struct {
     pub const pages = struct {
         pub const hello_world = StaticResource(
@@ -62,7 +89,7 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn post(
-                    header_params: *const HeaderParameters(EnforcedHeaders(.body)),
+                    header_params: *const HeaderParameters(EnforcedHeaders(.body_auth)),
                     body_params: *const BodyParameters(
                         []const u8,
                         MediaType{ .text = .{ .plain = .utf_8 } },
@@ -74,7 +101,7 @@ const ResourceTree = struct {
                 }
             },
             .{
-                .authenticate = false,
+                .authenticate = true,
             },
         );
     };
@@ -83,8 +110,18 @@ const ResourceTree = struct {
 const Router = RouterType(
     ResourceTree,
     Context,
-    JWTAuthenticator,
+    JWTAuthorizationProcessor(ClaimsSet),
     LoggingOnRequestProcessor(Context),
+);
+
+const Application = ApplicationType(
+    .{
+        .interface = "127.0.0.1",
+        .port = 3000,
+        .thread_count = 2,
+        .worker_count = 1,
+    },
+    Router,
 );
 
 pub fn main() !void {
@@ -94,36 +131,9 @@ pub fn main() !void {
     defer std.debug.print("\n\nLeaks detected: {}\n\n", .{gpa.deinit() != .ok});
     const allocator = gpa.allocator();
 
-    var enviroment: Enviroment = undefined;
-    try enviroment.initAll(allocator);
-    defer enviroment.deinit();
+    var app: Application = undefined;
+    try app.init(allocator);
+    defer app.deinit(allocator);
 
-    var my_context = Context{
-        .logger = undefined,
-    };
-
-    my_context.logger.init(&enviroment);
-    try my_context.logger.spawn();
-    defer my_context.logger.join();
-
-    const App = zap.App.Create(Context);
-    try App.init(allocator, &my_context, .{});
-    defer App.deinit();
-
-    var authenticator = try core.jwt.JWTAuthenticator.init(allocator, "12345", null);
-    defer authenticator.deinit();
-
-    var router: Router = undefined;
-    try router.init(&authenticator);
-
-    try App.listen(.{
-        .interface = "127.0.0.1",
-        .port = 3000,
-    });
-
-    // start worker threads
-    zap.start(.{
-        .threads = 2,
-        .workers = 1,
-    });
+    try app.run();
 }

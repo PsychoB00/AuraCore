@@ -1,10 +1,15 @@
 /// Aura
-const route_processor = @import("OnRequestProcessor.zig");
-pub const LoggingOnRequestProcessor = route_processor.LoggingOnRequestProcessor;
-pub const isOnRequestProcessor = route_processor.isOnRequestProcessor;
+const authorization_processor = @import("AuthorizationProcessor.zig");
+pub const JWTAuthorizationProcessor = authorization_processor.JWTAuthorizationProcessor;
+pub const isAuthorizationProcessor = authorization_processor.isAuthorizationProcessor;
+
+const on_request_processor = @import("OnRequestProcessor.zig");
+pub const LoggingOnRequestProcessor = on_request_processor.LoggingOnRequestProcessor;
+pub const isOnRequestProcessor = on_request_processor.isOnRequestProcessor;
 
 const router = @import("Router.zig");
 pub const Router = router.Router;
+pub const isRouter = router.isRouter;
 
 const static_resource = @import("StaticResource.zig");
 pub const StaticResourceOptions = static_resource.StaticResourceOptions;
@@ -48,5 +53,5 @@ pub const ResourceOptions = struct {
     /// which headers are send
     strict_headers: bool = false,
     /// How should zap handle endpoint request error
-    error_strategy: ErrorStrategy = .log_to_console,
+    error_strategy: ErrorStrategy = .raise,
 };

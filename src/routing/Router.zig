@@ -11,9 +11,10 @@ const core = @import("../core.zig");
 const static_route = @import("StaticRoute.zig");
 
 const StaticRoute = static_route.StaticRoute;
-const AuthStaticRoute = static_route.AuthStaticRoute;
 
 const fieldPtr = core.utils.fieldPtr;
+const isContext = core.context.isContext;
+const isAuthorizationProcessor = core.routing.isAuthorizationProcessor;
 const isOnRequestProcessor = core.routing.isOnRequestProcessor;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
@@ -21,14 +22,17 @@ const isAPIResource = core.routing.isAPIResource;
 /// Third party
 const zap = @import("zap");
 
-/// Router which constructs, authenticates and routes to `ResourceTree`
+/// Router which constructs, authenticates and routes to `ResourceTreeType`
 ///
-/// - `ResourceTree` must be a struct ...
+/// - `ResourceTreeType` must be a struct ...
+/// - `ContextType` must fulfill the isContext trait check
+/// - `AuthorizationProcessorType` must fulfill the isAuthorizationProcessor trait check or be null
+/// - `OnRequestProcessorType` must fulfill the isOnRequestProcessor trait check or be null
 pub fn Router(
-    comptime ResourceTree: type,
+    comptime ResourceTreeType: type,
     comptime ContextType: type,
-    comptime AuthenticatorType: type,
-    comptime RouteProcessorType: type,
+    comptime AuthorizationProcessorType: ?type,
+    comptime OnRequestProcessorType: ?type,
 ) type {
     // Generated Router tools
     const Gen = struct {
@@ -39,7 +43,7 @@ pub fn Router(
             api: usize = 0,
         };
 
-        /// Validation of `Node, where `Node` is part of `ResourceTree`
+        /// Validation of `Node, where `Node` is part of `ResourceTreeType`
         fn _validateNode(comptime Node: type) void {
             const node_info = @typeInfo(Node);
 
@@ -71,10 +75,22 @@ pub fn Router(
                     ));
 
                 if (isStaticResource(decl_value)) {
+                    if (AuthorizationProcessorType == null and decl_value.options.authenticate)
+                        @compileError(comptimePrint(
+                            "APIResource which should authenticate but doesn't have `AuthorizationProcessorType`, found in {s}",
+                            .{@typeName(Node)},
+                        ));
+
                     resource_names[resource_names_index] = decl.name;
                     resource_names_index += 1;
                 } else if (isAPIResource(decl_value)) {
-                    if (decl_value.infered_context_t != null and decl_value.infered_context_t != ContextType)
+                    if (AuthorizationProcessorType == null and decl_value.options.authenticate)
+                        @compileError(comptimePrint(
+                            "APIResource which should authenticate but doesn't have `AuthorizationProcessorType`, found in {s}",
+                            .{@typeName(Node)},
+                        ));
+
+                    if (decl_value.infered_context_t != null and decl_value.infered_context_t.? != ContextType)
                         @compileError(comptimePrint(
                             "Infered context type of a APIResource ({s}) is different then `ContexType`, found in {s}",
                             .{ @typeName(decl_value.infered_context_t.?), @typeName(Node) },
@@ -141,23 +157,14 @@ pub fn Router(
                             decl_path;
 
                     const static_route_type =
-                        if (options.authenticate)
-                            AuthStaticRoute(
-                                decl_value,
-                                ContextType,
-                                AuthenticatorType,
-                                RouteProcessorType,
-                                resource_path,
-                                options,
-                            )
-                        else
-                            StaticRoute(
-                                decl_value,
-                                ContextType,
-                                RouteProcessorType,
-                                resource_path,
-                                options,
-                            );
+                        StaticRoute(
+                            decl_value,
+                            ContextType,
+                            AuthorizationProcessorType,
+                            OnRequestProcessorType,
+                            resource_path,
+                            options,
+                        );
 
                     Buffer[Index.*] = .{
                         .name = comptimePrint("{}", .{Index.*}),
@@ -173,27 +180,40 @@ pub fn Router(
         }
     };
 
-    // `RouteProcessorType` correctness assertion
-    if (!isOnRequestProcessor(RouteProcessorType))
-        @compileError("`RouteProcessorType` must be OnRequestProcessor");
-    if (RouteProcessorType.context_t != ContextType)
-        @compileError("Context of `RouteProcessorType` isn't same as `ContextType`");
+    // `ResourceTreeType` correctness assertion
+    Gen._validateNode(ResourceTreeType);
 
-    // `ResourceTree` correctness assertion
-    Gen._validateNode(ResourceTree);
+    // `ContextType` correctness assertion
+    if (!isContext(ContextType))
+        @compileError("`ContextType` must be Context");
 
-    // Get resource count in `ResourceTree`
-    const resource_count = Gen._countResources(ResourceTree);
+    // `AuthorizationProcessorType` correctness assertion
+    if (!(AuthorizationProcessorType == null or isAuthorizationProcessor(AuthorizationProcessorType.?)))
+        @compileError("`AuthorizationProcessorType` must be AuthorizationProcessor");
+
+    // `OnRequestProcessorType` correctness assertion
+    if (!(OnRequestProcessorType == null or isOnRequestProcessor(OnRequestProcessorType.?)))
+        @compileError("`OnRequestProcessorType` must be OnRequestProcessor");
+    if (!(OnRequestProcessorType == null or OnRequestProcessorType.?.context_t == ContextType))
+        @compileError("Context of `OnRequestProcessorType` isn't same as `ContextType`");
+
+    // Get resource count in `ResourceTreeType`
+    const resource_count = Gen._countResources(ResourceTreeType);
     const static_route_count = resource_count.static + resource_count.api;
 
     // Generate StaticRoute fields
     var buffer: [static_route_count]StructField = undefined;
     var index: usize = 0;
-    _ = Gen._generateStaticRouteFields(ResourceTree, "", &buffer, &index);
+    Gen._generateStaticRouteFields(ResourceTreeType, "", &buffer, &index);
     const static_routes_fields: [static_route_count]StructField = buffer;
 
     return struct {
         const RouterType = @This();
+
+        pub const resource_tree_t = ResourceTreeType;
+        pub const context_t = ContextType;
+        pub const authorization_processor_t = AuthorizationProcessorType;
+        pub const on_request_processor_t = OnRequestProcessorType;
 
         pub const StaticRoutesSet = @Type(.{
             .@"struct" = .{
@@ -207,7 +227,10 @@ pub fn Router(
         static_routes_set: StaticRoutesSet,
 
         /// Initialize Router and its static_routes_set then register them to `application`
-        pub fn init(self: *RouterType, authenticator: *AuthenticatorType) !void {
+        pub fn init(
+            self: *RouterType,
+            authorization_processor: if (AuthorizationProcessorType == null) void else *const AuthorizationProcessorType.?,
+        ) !void {
             inline for (@typeInfo(StaticRoutesSet).@"struct".fields) |static_route_field| {
                 const static_route_field_ptr = fieldPtr(
                     StaticRoutesSet,
@@ -215,14 +238,53 @@ pub fn Router(
                     &self.static_routes_set,
                 );
 
-                if (comptime static_route_field.type.resource_options.authenticate) {
-                    static_route_field_ptr.init(authenticator);
-                    try Gen.App.register(&static_route_field_ptr.auth_static_route);
-                } else {
-                    static_route_field_ptr.* = .{};
-                    try Gen.App.register(static_route_field_ptr);
-                }
+                static_route_field_ptr.* = .{
+                    .authorization_processor = if (static_route_field.type.resource_options.authenticate)
+                        authorization_processor
+                    else
+                        undefined,
+                };
+                try Gen.App.register(static_route_field_ptr);
             }
         }
     };
+}
+
+/// Trait check for Router
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration of what resource tree it is using, named "resource_tree_t"
+///     - `resource_tree_t` must be decleration of type
+/// - `Type` must have declaration of what context it is using, named "context_t"
+///     - `context_t` must be decleration of type
+/// - `Type` must have declaration of what authentication processor it is using, named "authorization_processor_t"
+///     - `authorization_processor_t` must be decleration of ?type
+/// - `Type` must have declaration of what on-request processor it is using, named "on_request_processor_t"
+///     - `on_request_processor_t` must be decleration of ?type
+/// - `Type` must be able to generate `Type` using its declarations and function Router
+pub fn isRouter(comptime Type: type) bool {
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_resourcer_tree_type =
+        @hasDecl(Type, "resource_tree_t") and
+        @TypeOf(Type.resource_tree_t) == type;
+
+    const has_context_type =
+        @hasDecl(Type, "context_t") and
+        @TypeOf(Type.context_t) == type;
+
+    const has_authorization_processor_type =
+        @hasDecl(Type, "authorization_processor_t") and
+        @TypeOf(Type.authorization_processor_t) == ?type;
+
+    const has_on_request_processor_type =
+        @hasDecl(Type, "on_request_processor_t") and
+        @TypeOf(Type.on_request_processor_t) == ?type;
+
+    const can_generate_self =
+        has_resourcer_tree_type and has_context_type and has_authorization_processor_type and has_on_request_processor_type and
+        Router(Type.resource_tree_t, Type.context_t, Type.authorization_processor_t, Type.on_request_processor_t) == Type;
+
+    return can_generate_self;
 }

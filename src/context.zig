@@ -4,6 +4,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const EnvMap = std.process.EnvMap;
 
+const hasMethod = std.meta.hasMethod;
+
 /// Aura
 const core = @import("core.zig");
 
@@ -35,9 +37,26 @@ pub const Environment = struct {
     }
 };
 
+/// Trait check for Context
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration for initializing method, named "init"
+///     - `init` must have function signiture fn(*Type, Allocator) anyerror!void
+/// - `Type` must have declaration for deinitializing method, named "deinit"
+///     - `deinit` must have function signiture fn(*Type, Allocator) void
 pub fn isContext(comptime Type: type) bool {
-    const info = @typeInfo(Type);
-    return info == .@"struct" and !info.@"struct".is_tuple;
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_init =
+        hasMethod(Type, "init") and
+        @TypeOf(Type.init) == fn (*Type, Allocator) anyerror!void;
+
+    const has_deinit =
+        hasMethod(Type, "deinit") and
+        @TypeOf(Type.deinit) == fn (*Type, Allocator) void;
+
+    return has_init and has_deinit;
 }
 
 pub fn hasLogger(comptime Type: type) ?type {

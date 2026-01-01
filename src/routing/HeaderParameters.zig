@@ -15,8 +15,11 @@ const ParametersType = core.routing.ParametersType;
 
 const Host = core.net.headers.Host;
 const UserAgent = core.net.headers.UserAgent;
+
 const ContentLength = core.net.headers.ContentLength;
 const ContentType = core.net.headers.ContentType;
+
+const Authorization = core.net.headers.Authorization;
 
 const fieldPtr = core.utils.fieldPtr;
 const isResourceParameters = core.routing.isResourceParameters;
@@ -32,6 +35,7 @@ const enforcable_headers = [_]type{
     UserAgent,
     ContentLength,
     ContentType,
+    Authorization,
 };
 
 pub const EnforcedHeadersTag = enum(u2) {
@@ -70,6 +74,8 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
 
             host: Host,
             user_agent: UserAgent,
+
+            authorization: Authorization,
         },
         // body_auth = body, auth
         .body_auth => struct {
@@ -80,6 +86,8 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
 
             content_length: ContentLength,
             content_type: ContentType,
+
+            authorization: Authorization,
         },
     };
 }
