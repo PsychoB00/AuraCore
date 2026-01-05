@@ -12,12 +12,13 @@ const Environment = core.context.Environment;
 const ApplicationType = core.application.Application;
 
 const RouterType = core.routing.Router;
-const JWTAuthorizationProcessor = core.routing.JWTAuthorizationProcessor;
+const JWTAuthorizationProcessor = core.jwt.JWTAuthorizationProcessor;
 const LoggingOnRequestProcessor = core.routing.LoggingOnRequestProcessor;
 
 const ResourceOptions = core.routing.ResourceOptions;
 const StaticResource = core.routing.StaticResource;
 const APIResource = core.routing.APIResource;
+const ClaimsSet = core.jwt.ClaimsSet;
 
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
@@ -46,12 +47,6 @@ const LogProcessor = core.log.ConsoleLogProcessor(Log, LogFmtOptions, null);
 const Logger = core.log.Logger(Log, LogProcessor, LoggerOptions);
 
 /// Context
-pub const ClaimsSet = struct {
-    sub: []const u8,
-    iat: i64,
-    exp: i64,
-};
-
 const Context = struct {
     environment: Environment,
     jwt_key: []const u8,
@@ -59,7 +54,7 @@ const Context = struct {
 
     pub fn init(self: *Context, allocator: Allocator) anyerror!void {
         try self.environment.initAll(allocator);
-        self.jwt_key = "12345";
+        self.jwt_key = "01234567890123456789012345678901";
         self.logger.init(&self.environment);
 
         try self.logger.spawn();

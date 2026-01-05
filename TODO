@@ -53,7 +53,7 @@ routing:
     - OnRequestProcessor:
         - [x] Rework the trait check
         - [x] Add option to have OnRequestProcessor == null in Router
-        - [] Rework error functions to also state what is the status code of response
+        - [o] Rework error functions to also state what is the status code of response
     - AuthorizationProcessor:
         - [] Finish JWTAuthorizationProcessor
     - resources:

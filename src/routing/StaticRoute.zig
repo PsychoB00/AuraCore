@@ -398,7 +398,7 @@ pub fn StaticRoute(
             if (comptime Options.authenticate) {
                 var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
 
-                if (!self.authorization_processor.process(request, &header_parameters_ptr.data.authorization, &claims_set)) {
+                if (!self.authorization_processor.authorize(request, &header_parameters_ptr.data.authorization, &claims_set, allocator)) {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "unauthorized")))
                         processor.unauthorized();
                     request.setStatus(.unauthorized);

@@ -41,6 +41,7 @@ pub const application = @import("application.zig");
 pub const context = @import("context.zig");
 pub const log = @import("log.zig");
 pub const json = @import("json.zig");
+pub const jwt = @import("jwt.zig");
 
 pub const net = struct {
     pub const headers = @import("net/headers/headers.zig");

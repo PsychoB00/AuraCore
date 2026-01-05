@@ -17,6 +17,7 @@ const ParametersType = core.routing.ParametersType;
 const hasLogger = core.context.hasLogger;
 const getLogger = core.context.getLogger;
 const methodToUpper = core.net.methodToUpper;
+const statusCodeToUpper = core.net.statusCodeToUpper;
 
 /// Third Party
 const zap = @import("zap");
@@ -178,7 +179,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
 
             const status_string = comptime comptimePrint(
                 "{} {s}",
-                .{ @intFromEnum(Status), core.net.statusCodeToUpper(Status) },
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
             );
 
             _ = log.printTryFmt("Request handeled succesfully in {}ms, responded with " ++ status_string, .{elapsed_time}) catch
