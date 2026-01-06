@@ -46,8 +46,9 @@ const zap = @import("zap");
 const ErrorStrategy = zap.Endpoint.ErrorStrategy;
 
 pub const ResourceOptions = struct {
-    /// Should endpoint requests for resources in this resource be authenticated by Router
-    authenticate: bool,
+    /// Should endpoint requests for this resource be authorized by AuthorizationProcessor and if so,
+    /// what requirements should be used
+    authorize: ?[]const []const u8,
     /// Should endpoint request for resource return error if headers in request aren't defined
     /// in resource. Usefull when working with browsers or if you don't have control over
     /// which headers are send

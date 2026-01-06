@@ -80,14 +80,16 @@ pub fn isResourceParameters(comptime Type: type) bool {
 ///     - *Context
 ///     - Allocator
 /// - Return type of http method must be either StatusCode or !StatusCode.
-/// - If `Options.authenticate` is true, `Controller` can have function `unauthorized`.
 /// - For brevity of APIResource type declaration, exact Context type is not checked until StaticRoute
 ///   generation in Router.
 pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions) type {
+    // `Options` correctness assertion
+    if (Options.authorize != null and Options.authorize.?.len == 0)
+        @compileError("`Options.authorize` must either be null or have one or more elements");
+
     // `Controller` correctness asssertion
     const controller_info = @typeInfo(Controller);
     const function_names = [_][]const u8{
-        "unauthorized",
         "get",
         "post",
         "put",
@@ -111,7 +113,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
             .@"fn" => |info| {
                 // Name validity assertion
                 const checked_method_name =
-                    if (Options.authenticate)
+                    if (Options.authorize != null)
                         function_names
                     else
                         function_names[1..];
@@ -119,7 +121,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
 
                 for (checked_method_name) |name| methode_name_loop: {
                     if (eql(u8, name, decl.name)) {
-                        has_methods = !eql(u8, "unauthorized", decl.name);
+                        has_methods = true;
                         valid_method_name_found = decl.name;
                         break :methode_name_loop;
                     }
@@ -225,7 +227,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                 const enforced_headers =
                     EnforcedHeaders(
                         EnforcedHeadersTag.generate(
-                            Options.authenticate,
+                            Options.authorize != null,
                             body_param_found != null,
                         ),
                     );

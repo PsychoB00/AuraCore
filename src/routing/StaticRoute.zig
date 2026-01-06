@@ -136,7 +136,7 @@ pub fn StaticRoute(
         pub const resource_options = Options;
         pub const resource_category = ResourceCategory.fromType(ResourceType);
 
-        authorization_processor: if (Options.authenticate) *const (AuthorizationProcessorType.?) else void,
+        authorization_processor: if (Options.authorize != null) *const (AuthorizationProcessorType.?) else void,
         path: []const u8 = Path,
         error_strategy: ErrorStrategy = Options.error_strategy,
 
@@ -198,7 +198,7 @@ pub fn StaticRoute(
 
         /// Sends StaticResource and sets appropriate headers
         fn _sendStaticResource(
-            _: *StaticRouteType,
+            self: *StaticRouteType,
             comptime MethodType: Method,
             allocator: Allocator,
             context: *ContextType,
@@ -229,7 +229,7 @@ pub fn StaticRoute(
                 HeaderParameters(
                     EnforcedHeaders(
                         EnforcedHeadersTag.generate(
-                            resource_options.authenticate,
+                            resource_options.authorize != null,
                             false,
                         ),
                     ),
@@ -247,6 +247,24 @@ pub fn StaticRoute(
                 request.setStatus(.bad_request);
                 return;
             };
+
+            // Authorization
+            if (comptime Options.authorize != null) {
+                var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
+
+                if (!self.authorization_processor.authorize(
+                    MethodType,
+                    Options.authorize.?,
+                    &enforced_headers.data.authorization,
+                    &claims_set,
+                    allocator,
+                )) {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "unauthorized")))
+                        processor.unauthorized();
+                    request.setStatus(.unauthorized);
+                    return;
+                }
+            }
 
             if (comptime MethodType == .GET) {
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
@@ -349,7 +367,7 @@ pub fn StaticRoute(
                     HeaderParameters(
                         EnforcedHeaders(
                             EnforcedHeadersTag.generate(
-                                resource_options.authenticate,
+                                resource_options.authorize != null,
                                 has_body_parameters,
                             ),
                         ),
@@ -359,7 +377,7 @@ pub fn StaticRoute(
             var header_parameters: header_parameters_type = undefined;
             var header_parameters_ptr: *header_parameters_type = undefined;
 
-            if (comptime header_parameters_field != null) {
+            if (comptime header_parameters_field == null) {
                 // Only EnforcedHeaders
                 header_parameters_type.parse(
                     resource_options.strict_headers,
@@ -395,10 +413,16 @@ pub fn StaticRoute(
             }
 
             // Authorization
-            if (comptime Options.authenticate) {
+            if (comptime Options.authorize != null) {
                 var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
 
-                if (!self.authorization_processor.authorize(request, &header_parameters_ptr.data.authorization, &claims_set, allocator)) {
+                if (!self.authorization_processor.authorize(
+                    MethodType,
+                    Options.authorize.?,
+                    &header_parameters_ptr.data.authorization,
+                    &claims_set,
+                    allocator,
+                )) {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "unauthorized")))
                         processor.unauthorized();
                     request.setStatus(.unauthorized);

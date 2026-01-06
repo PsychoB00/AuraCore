@@ -20,13 +20,6 @@ application:
 context:
     - [x] Add init and deinit to Context
 
-log:
-0.0.14:
-    - [x] Rework format parsing to Io
-0.0.15:
-    - [x] Rework trait checks
-    - [x] Add fmt checks to LogFmtOptions
-
 json:
 0.0.13:
     - [] Remove zimdjson dependency, in favor of std
@@ -48,28 +41,22 @@ net:
 
 routing:
     - router:
-        - [o] Rework authorization
+        - [x] Rework authorization
         - [x] Add isRouter trait check
     - OnRequestProcessor:
         - [x] Rework the trait check
         - [x] Add option to have OnRequestProcessor == null in Router
-        - [o] Rework error functions to also state what is the status code of response
+        - [] Rework error functions to also state what is the status code of response
     - AuthorizationProcessor:
-        - [] Finish JWTAuthorizationProcessor
+        - [x] Finish JWTAuthorizationProcessor
     - resources:
-    - 0.0.12:
-        - [x] Fix StaticResource for headers rework
-        - [x] Fix APIResource for headers rework
-    - 0.0.14:
-        - [x] Rework PathParameters, QueryParameters and BodyParameters to use Io
-    - 0.0.15:
-        - [x] Rework isPathParameters
-        - [x] Rework PathParameters to use Io and does utf8 decoding
     - 0.0.16:
         - [x] Rework QueryParameters to use Io and does utf8 decoding
     - 0.0.19:
         - [x] Fix StaticRoute for EnforcedHeaders
     - 0.0.21:
         - [x] Add AllowedMediaTypes
+    - 0.0.26:
+        - [] Add ClaimsSet to APIResource
     - Respose:
         - [] Create Response struct

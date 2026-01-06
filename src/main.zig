@@ -15,7 +15,6 @@ const RouterType = core.routing.Router;
 const JWTAuthorizationProcessor = core.jwt.JWTAuthorizationProcessor;
 const LoggingOnRequestProcessor = core.routing.LoggingOnRequestProcessor;
 
-const ResourceOptions = core.routing.ResourceOptions;
 const StaticResource = core.routing.StaticResource;
 const APIResource = core.routing.APIResource;
 const ClaimsSet = core.jwt.ClaimsSet;
@@ -76,7 +75,7 @@ const ResourceTree = struct {
             "zig-out/resources/hello_world.html",
             .{},
             .{
-                .authenticate = false,
+                .authorize = &.{"basic_viewer"},
             },
         );
     };
@@ -84,19 +83,17 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn post(
-                    header_params: *const HeaderParameters(EnforcedHeaders(.body_auth)),
                     body_params: *const BodyParameters(
                         []const u8,
                         MediaType{ .text = .{ .plain = .utf_8 } },
                     ),
                 ) !StatusCode {
-                    _ = header_params;
                     _ = body_params;
                     return .ok;
                 }
             },
             .{
-                .authenticate = true,
+                .authorize = null,
             },
         );
     };

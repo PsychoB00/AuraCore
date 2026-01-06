@@ -22,7 +22,7 @@ const isAPIResource = core.routing.isAPIResource;
 /// Third party
 const zap = @import("zap");
 
-/// Router which constructs, authenticates and routes to `ResourceTreeType`
+/// Router which constructs, authorizes and routes to `ResourceTreeType`
 ///
 /// - `ResourceTreeType` must be a struct ...
 /// - `ContextType` must fulfill the isContext trait check
@@ -75,18 +75,18 @@ pub fn Router(
                     ));
 
                 if (isStaticResource(decl_value)) {
-                    if (AuthorizationProcessorType == null and decl_value.options.authenticate)
+                    if (AuthorizationProcessorType == null and decl_value.options.authorize != null)
                         @compileError(comptimePrint(
-                            "APIResource which should authenticate but doesn't have `AuthorizationProcessorType`, found in {s}",
+                            "APIResource which should authorize but doesn't have `AuthorizationProcessorType`, found in {s}",
                             .{@typeName(Node)},
                         ));
 
                     resource_names[resource_names_index] = decl.name;
                     resource_names_index += 1;
                 } else if (isAPIResource(decl_value)) {
-                    if (AuthorizationProcessorType == null and decl_value.options.authenticate)
+                    if (AuthorizationProcessorType == null and decl_value.options.authorize != null)
                         @compileError(comptimePrint(
-                            "APIResource which should authenticate but doesn't have `AuthorizationProcessorType`, found in {s}",
+                            "APIResource which should authorize but doesn't have `AuthorizationProcessorType`, found in {s}",
                             .{@typeName(Node)},
                         ));
 
@@ -239,7 +239,7 @@ pub fn Router(
                 );
 
                 static_route_field_ptr.* = .{
-                    .authorization_processor = if (static_route_field.type.resource_options.authenticate)
+                    .authorization_processor = if (static_route_field.type.resource_options.authorize != null)
                         authorization_processor
                     else
                         undefined,

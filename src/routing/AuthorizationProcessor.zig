@@ -3,6 +3,8 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 
+const Method = std.http.Method;
+
 const hasMethod = std.meta.hasMethod;
 
 /// Aura
@@ -26,7 +28,8 @@ const Request = zap.Request;
 /// - `Type` must have declaration of method for deinitializing, named "deinit"
 ///     - `deinit` must be decleration of method with signature fn (*Type, Allocator) void
 /// - `Type` must have declaration of method for authorizing, named "authorize"
-///     - `authorize` must be decleration of method with signature fn (*const Type, *const Request, *const Authorization, *Type.claims_set_t, Allocator) bool
+///     - `authorize` must be decleration of method with signature
+///       fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) bool
 pub fn isAuthorizationProcessor(comptime Type: type) bool {
     if (@typeInfo(Type) != .@"struct")
         return false;
@@ -46,7 +49,7 @@ pub fn isAuthorizationProcessor(comptime Type: type) bool {
     const has_authorize =
         has_claims_set and
         hasMethod(Type, "authorize") and
-        @TypeOf(Type.authorize) == fn (*const Type, *const Request, *const Authorization, *Type.claims_set_t, Allocator) bool;
+        @TypeOf(Type.authorize) == fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) bool;
 
     return has_init and has_deinit and has_authorize;
 }

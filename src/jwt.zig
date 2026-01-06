@@ -2,7 +2,9 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Method = std.http.Method;
 
+const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const parseFromSliceLeaky = std.json.parseFromSliceLeaky;
 const hasMethod = std.meta.hasMethod;
 const timestamp = std.time.timestamp;
@@ -55,41 +57,15 @@ pub const ClaimsSet = struct {
         }
     };
 
-    pub const Role = struct {
-        const max_name_len: usize = 32;
-        const perms_capacity: usize = 64;
-
-        name: []const u8,
-        perms: []const Permission,
-
-        pub fn validate(self: Role) !void {
-            if (self.name.len == 0)
-                return error.NameTooShort;
-            if (self.name.len > max_name_len)
-                return error.NameTooLong;
-
-            if (self.perms.len == 0)
-                return error.TooFewPerms;
-            if (self.perms.len > Role.perms_capacity)
-                return error.TooManyPerms;
-
-            for (self.perms) |perm| {
-                try perm.validate();
-            }
-        }
-    };
-
     const max_sub_len: usize = 64;
     const perms_capacity: usize = 128;
-    const roles_capacity: usize = 32;
 
     sub: []const u8,
     perms: ?[]const Permission,
-    roles: ?[]const Role,
     iat: i64,
     exp: i64,
 
-    pub fn validate(self: ClaimsSet) !void {
+    pub fn validate(self: ClaimsSet) anyerror!void {
         if (self.sub.len == 0)
             return error.SubTooShort;
         if (self.sub.len > max_sub_len)
@@ -101,27 +77,84 @@ pub const ClaimsSet = struct {
             if (perms.len > perms_capacity)
                 return error.TooManyPerms;
 
-            for (perms) |perm| {
+            for (perms, 0..) |perm, index| {
                 try perm.validate();
-            }
-        }
 
-        if (self.roles) |roles| {
-            if (roles.len == 0)
-                return error.TooFewRoles;
-            if (roles.len > roles_capacity)
-                return error.TooManyRoles;
-
-            for (roles) |role| {
-                try role.validate();
+                for (perms[(index + 1)..]) |check_perm| {
+                    if (eqlIgnoreCase(perm.name, check_perm.name))
+                        return error.DuplicatePermission;
+                }
             }
         }
     }
 
-    pub fn isValid(self: ClaimsSet, request: *const Request) Validity {
+    pub fn isValid(self: ClaimsSet, comptime MethodType: Method, comptime RequirementsSet: []const []const u8) Validity {
+        comptime {
+            // `RequirementsSet` correctness assertion
+            if (RequirementsSet.len > perms_capacity)
+                @compileError("`RequirementsSet` mustn't have more requirements then `self` can have permission");
+
+            for (RequirementsSet, 0..) |requirement, index| {
+                if (requirement.len == 0)
+                    @compileError("Requirement with zero length found in `RequirementsSet`");
+                if (requirement.len > Permission.max_name_len)
+                    @compileError("Requirement with length over `Permission.max_name_len` found in `RequirementsSet`");
+
+                for (RequirementsSet[(index + 1)..]) |check_requirement| {
+                    if (eqlIgnoreCase(requirement, check_requirement))
+                        @compileError("`RequirementsSet` mustn't have any duplicate values (case insensitive)");
+                }
+            }
+        }
+
         assertValidate(self.validate());
 
-        _ = request;
+        if (self.perms == null)
+            return .invalid;
+
+        inline for (RequirementsSet) |requirement| {
+            var permission: ?*const Permission = null;
+
+            for (self.perms.?) |*perm| {
+                if (!eqlIgnoreCase(requirement, perm.name))
+                    continue;
+
+                permission = perm;
+                break;
+            }
+
+            if (permission == null)
+                return .invalid;
+
+            switch (MethodType) {
+                inline .POST => {
+                    // CREATE
+                    if (!permission.?.allowsCreate())
+                        return .invalid;
+                },
+                inline .GET, .HEAD, .OPTIONS => {
+                    // READ
+                    if (!permission.?.allowsRead())
+                        return .invalid;
+                },
+                inline .PATCH => {
+                    // UPDATE
+                    if (!permission.?.allowsUpdate())
+                        return .invalid;
+                },
+                inline .DELETE => {
+                    // DELETE
+                    if (!permission.?.allowsDelete())
+                        return .invalid;
+                },
+                inline .PUT => {
+                    // CREATE + UPDATE
+                    if (!(permission.?.allowsCreate() and permission.?.allowsUpdate()))
+                        return .invalid;
+                },
+                inline else => unreachable,
+            }
+        }
 
         if (self.exp < timestamp())
             return .expired;
@@ -150,6 +183,17 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
 
         key: []const u8,
 
+        fn _validateKey(key: []const u8) !void {
+            if (key.len < min_key_len)
+                return error.JWTKeyTooShort;
+            if (key.len > max_key_len)
+                return error.JWTKeyTooLong;
+        }
+
+        pub fn validate(self: JWTAuthorizationProcessorType) anyerror!void {
+            try _validateKey(self.key);
+        }
+
         pub fn init(self: *JWTAuthorizationProcessorType, context: anytype, allocator: Allocator) anyerror!void {
             comptime {
                 // `context` correctness assertion
@@ -166,21 +210,21 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
 
             const context_key: []const u8 = @field(context.*, "jwt_key");
 
-            if (context_key.len < min_key_len)
-                return error.JWTKeyTooShort;
-            if (context_key.len > max_key_len)
-                return error.JWTKeyTooLong;
+            try _validateKey(context_key);
 
             self.key = try allocator.dupe(u8, context_key);
         }
 
         pub fn authorize(
             self: *const JWTAuthorizationProcessorType,
-            request: *const Request,
+            comptime MethodType: Method,
+            comptime RequirementsSet: []const []const u8,
             authorization_header: *const Authorization,
             claims_set_dest: *ClaimsSetType,
             allocator: Allocator,
         ) bool {
+            assertValidate(self.validate());
+
             if (authorization_header.scheme != .bearer)
                 return false;
 
@@ -200,29 +244,40 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     .{ .allocate = .alloc_always },
                 ) catch return false;
 
-            const validity: Validity = claims_set_dest.isValid(request);
+            claims_set_dest.validate() catch
+                return false;
+
+            const validity: Validity = claims_set_dest.isValid(MethodType, RequirementsSet);
 
             return validity == .valid;
         }
 
         pub fn deinit(self: *JWTAuthorizationProcessorType, allocator: Allocator) void {
+            assertValidate(self.validate());
+
             allocator.free(self.key);
         }
     };
 }
 
-/// Trait check for AuthorizationProcessor
+/// Trait check for ClaimSetType for JWTAuthorizationProcessor
 ///
 /// - `Type` must be struct
+/// - `Type` must have declaration of method to validate, named "validate"
+///     - `validate` must be decleration of method with signature fn (Type) anyerror!void
 /// - `Type` must have declaration of method to check if it is valid, named "isValid"
-///     - `isValid` must be decleration of method with signature fn (Type, *const Request) Validity
+///     - `isValid` must be decleration of method with signature fn (Type, comptime Method, comptime []const []const u8) Validity
 pub fn isJWTClaimsSet(comptime Type: type) bool {
     if (@typeInfo(Type) != .@"struct")
         return false;
 
+    const has_validate =
+        hasMethod(Type, "validate") and
+        @TypeOf(Type.validate) == fn (Type) anyerror!void;
+
     const has_is_valid =
         hasMethod(Type, "isValid") and
-        @TypeOf(Type.isValid) == fn (Type, *const Request) Validity;
+        @TypeOf(Type.isValid) == fn (Type, comptime Method, comptime []const []const u8) Validity;
 
-    return has_is_valid;
+    return has_validate and has_is_valid;
 }
