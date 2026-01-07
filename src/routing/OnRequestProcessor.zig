@@ -79,90 +79,128 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 .commit();
         }
 
-        pub fn requestInvalid(self: *OnRequestProcessorType, err: anyerror) void {
+        pub fn invalidRequest(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
             var log = self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Request invalid. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Request invalid");
+            _ = log.printTryFmt("Request is invalid, caused by {s}, responded with " ++ status_string ++ "", .{@errorName(err)}) catch
+                log.print("Request is invalid, responded with " ++ status_string);
         }
 
-        pub fn parametersInvalid(self: *OnRequestProcessorType, comptime Type: ParametersType, err: anyerror) void {
-            var log = self.logger
-                .log(.err)
-                .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
+        pub fn invalidMethod(self: *OnRequestProcessorType, comptime Status: StatusCode) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
 
-            _ = log.printTryFmt("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters");
-        }
-
-        pub fn unauthorized(self: *OnRequestProcessorType) void {
             self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
-                .print("Request with invalid authorization")
+                .print("Request for invalid method, responded with " ++ status_string)
                 .commit();
         }
 
-        pub fn enforcedHeadersInvalid(self: *OnRequestProcessorType, err: anyerror) void {
+        pub fn invalidParameters(self: *OnRequestProcessorType, comptime Type: ParametersType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
             var log = self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Request with invalid enforced headers. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Request with invalid enforced headers");
+            _ = log.printTryFmt("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters, responded with " ++ status_string);
         }
 
-        pub fn readFileError(self: *OnRequestProcessorType, err: anyerror) void {
-            var log = self.logger
+        pub fn invalidAuthorization(self: *OnRequestProcessorType, comptime Status: StatusCode) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
+            self.logger
                 .log(.err)
                 .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
-
-            _ = log.printTryFmt("Failed to read file. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Failed to read file");
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
+                .print("Request with invalid authorization, responded with " ++ status_string)
+                .commit();
         }
 
-        pub fn handlerError(self: *OnRequestProcessorType, err: anyerror) void {
+        pub fn setHeadersError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
             var log = self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Failed to handle request. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Failed to handle request");
+            _ = log.printTryFmt("Failed to set headers, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to set headers, responded with " ++ status_string);
         }
 
-        pub fn setHeadersError(self: *OnRequestProcessorType, err: anyerror) void {
+        pub fn sendBodyError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
             var log = self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Failed to set headers. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Failed to set headers");
+            _ = log.printTryFmt("Failed to send body, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to send body, responded with " ++ status_string);
         }
 
-        pub fn sendBodyError(self: *OnRequestProcessorType, err: anyerror) void {
+        pub fn readFileError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
             var log = self.logger
                 .log(.err)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Failed to send body. Cause: {s}", .{@errorName(err)}) catch
-                log.print("Failed to send body");
+            _ = log.printTryFmt("Failed to read file, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to read file, responded with " ++ status_string);
+        }
+
+        pub fn controllerError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
+            var log = self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Failed to handle request, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to handle request, responded with " ++ status_string);
         }
 
         pub fn success(self: *OnRequestProcessorType, comptime Status: StatusCode) void {

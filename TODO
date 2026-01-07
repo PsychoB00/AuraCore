@@ -46,7 +46,7 @@ routing:
     - OnRequestProcessor:
         - [x] Rework the trait check
         - [x] Add option to have OnRequestProcessor == null in Router
-        - [] Rework error functions to also state what is the status code of response
+        - [x] Rework error functions to also state what is the status code of response
     - AuthorizationProcessor:
         - [x] Finish JWTAuthorizationProcessor
     - resources:
@@ -57,6 +57,6 @@ routing:
     - 0.0.21:
         - [x] Add AllowedMediaTypes
     - 0.0.26:
-        - [] Add ClaimsSet to APIResource
+        - [x] Add ClaimsSet to APIResource
     - Respose:
         - [] Create Response struct

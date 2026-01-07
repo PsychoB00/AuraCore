@@ -75,7 +75,7 @@ const ResourceTree = struct {
             "zig-out/resources/hello_world.html",
             .{},
             .{
-                .authorize = &.{"basic_viewer"},
+                .authorize = null,
             },
         );
     };
@@ -85,15 +85,17 @@ const ResourceTree = struct {
                 pub fn post(
                     body_params: *const BodyParameters(
                         []const u8,
-                        MediaType{ .text = .{ .plain = .utf_8 } },
+                        CommonMediaTypes.text,
                     ),
+                    claims_set: *const ClaimsSet,
                 ) !StatusCode {
                     _ = body_params;
+                    _ = claims_set;
                     return .ok;
                 }
             },
             .{
-                .authorize = null,
+                .authorize = &.{"test"},
             },
         );
     };

@@ -90,6 +90,12 @@ pub fn Router(
                             .{@typeName(Node)},
                         ));
 
+                    if (decl_value.infered_claims_set_t != null and decl_value.infered_claims_set_t.? != AuthorizationProcessorType.?.claims_set_t)
+                        @compileError(comptimePrint(
+                            "Infered claims set type of a APIResource ({s}) is different then `AuthorizationProcessorType.?.claims_set_t`, found in {s}",
+                            .{ @typeName(decl_value.infered_claims_set_t.?), @typeName(Node) },
+                        ));
+
                     if (decl_value.infered_context_t != null and decl_value.infered_context_t.? != ContextType)
                         @compileError(comptimePrint(
                             "Infered context type of a APIResource ({s}) is different then `ContexType`, found in {s}",
@@ -180,9 +186,6 @@ pub fn Router(
         }
     };
 
-    // `ResourceTreeType` correctness assertion
-    Gen._validateNode(ResourceTreeType);
-
     // `ContextType` correctness assertion
     if (!isContext(ContextType))
         @compileError("`ContextType` must be Context");
@@ -196,6 +199,9 @@ pub fn Router(
         @compileError("`OnRequestProcessorType` must be OnRequestProcessor");
     if (!(OnRequestProcessorType == null or OnRequestProcessorType.?.context_t == ContextType))
         @compileError("Context of `OnRequestProcessorType` isn't same as `ContextType`");
+
+    // `ResourceTreeType` correctness assertion
+    Gen._validateNode(ResourceTreeType);
 
     // Get resource count in `ResourceTreeType`
     const resource_count = Gen._countResources(ResourceTreeType);

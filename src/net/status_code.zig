@@ -18,11 +18,7 @@ pub fn statusCodeToUpper(comptime Status: StatusCode) []const u8 {
     var res: [status_string.len]u8 = undefined;
 
     for (0..status_string.len) |index| {
-        res[index] =
-            if (status_string[index] == '_')
-                ' '
-            else
-                toUpper(status_string[index]);
+        res[index] = toUpper(status_string[index]);
     }
 
     return res[0..];
