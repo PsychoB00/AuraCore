@@ -13,7 +13,6 @@ const Ip6Address = std.net.Ip6Address;
 const assert = std.debug.assert;
 const parseInt = std.fmt.parseInt;
 const isHostnameValid = std.net.isValidHostName;
-const utf8ByteSequenceLength = std.unicode.utf8ByteSequenceLength;
 const percentEncode = std.Uri.Component.percentEncode;
 const isAscii = std.ascii.isAscii;
 

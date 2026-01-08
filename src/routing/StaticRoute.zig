@@ -242,28 +242,48 @@ pub fn StaticRoute(
                 request,
                 &enforced_headers,
                 allocator,
-            ) catch |err| {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                    processor.invalidParameters(.header, .bad_request, err);
-                request.setStatus(.bad_request);
-                return;
+            ) catch |err| switch (err) {
+                error.Unauthorized => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                        processor.invalidAuthorization(.unauthorized);
+                    request.setStatus(.unauthorized);
+                    return;
+                },
+                else => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                        processor.invalidParameters(.header, .bad_request, err);
+                    request.setStatus(.bad_request);
+                    return;
+                },
             };
 
             // Authorization
             if (comptime Options.authorize != null) {
                 var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
 
-                if (!self.authorization_processor.authorize(
-                    MethodType,
-                    Options.authorize.?,
-                    &enforced_headers.data.authorization,
-                    &claims_set,
-                    allocator,
-                )) {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                        processor.invalidAuthorization(.unauthorized);
-                    request.setStatus(.unauthorized);
-                    return;
+                const authorization_result =
+                    self.authorization_processor.authorize(
+                        MethodType,
+                        Options.authorize.?,
+                        &enforced_headers.data.authorization,
+                        &claims_set,
+                        allocator,
+                    );
+
+                switch (authorization_result) {
+                    .unauthorized => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.unauthorized);
+                        request.setStatus(.unauthorized);
+                        return;
+                    },
+                    .forbidden => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.forbidden);
+                        request.setStatus(.forbidden);
+                        return;
+                    },
+                    .authorized => {},
                 }
             }
 
@@ -379,11 +399,19 @@ pub fn StaticRoute(
                     request,
                     &header_parameters,
                     allocator,
-                ) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                        processor.invalidParameters(.header, .bad_request, err);
-                    request.setStatus(.bad_request);
-                    return;
+                ) catch |err| switch (err) {
+                    error.Unauthorized => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.unauthorized);
+                        request.setStatus(.unauthorized);
+                        return;
+                    },
+                    else => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                            processor.invalidParameters(.header, .bad_request, err);
+                        request.setStatus(.bad_request);
+                        return;
+                    },
                 };
                 header_parameters_ptr = &header_parameters;
             } else {
@@ -398,11 +426,19 @@ pub fn StaticRoute(
                     request,
                     parameters_ptr,
                     allocator,
-                ) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                        processor.invalidParameters(.header, .bad_request, err);
-                    request.setStatus(.bad_request);
-                    return;
+                ) catch |err| switch (err) {
+                    error.Unauthorized => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.unauthorized);
+                        request.setStatus(.unauthorized);
+                        return;
+                    },
+                    else => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                            processor.invalidParameters(.header, .bad_request, err);
+                        request.setStatus(.bad_request);
+                        return;
+                    },
                 };
                 header_parameters_ptr = parameters_ptr;
             }
@@ -411,17 +447,29 @@ pub fn StaticRoute(
             var claims_set: if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void = undefined;
 
             if (comptime Options.authorize != null) {
-                if (!self.authorization_processor.authorize(
-                    MethodType,
-                    Options.authorize.?,
-                    &header_parameters_ptr.data.authorization,
-                    &claims_set,
-                    allocator,
-                )) {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                        processor.invalidAuthorization(.unauthorized);
-                    request.setStatus(.unauthorized);
-                    return;
+                const authorization_result =
+                    self.authorization_processor.authorize(
+                        MethodType,
+                        Options.authorize.?,
+                        &header_parameters_ptr.data.authorization,
+                        &claims_set,
+                        allocator,
+                    );
+
+                switch (authorization_result) {
+                    .unauthorized => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.unauthorized);
+                        request.setStatus(.unauthorized);
+                        return;
+                    },
+                    .forbidden => {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                            processor.invalidAuthorization(.forbidden);
+                        request.setStatus(.forbidden);
+                        return;
+                    },
+                    .authorized => {},
                 }
             }
 

@@ -260,7 +260,10 @@ pub fn HeaderParameters(comptime Structure: type) type {
                     break :check_loop;
 
                 if (@typeInfo(field.type) != .optional)
-                    return error.MissingValue;
+                    if (field.type == Authorization)
+                        return error.Unauthorized
+                    else
+                        return error.MissingValue;
 
                 fieldPtr(HeaderParametersType, field.name, &dest.data).* = null;
             }

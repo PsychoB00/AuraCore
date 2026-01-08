@@ -4,6 +4,9 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 
+const isAlphanumeric = std.ascii.isAlphanumeric;
+const isPrint = std.ascii.isPrint;
+const isWhitespace = std.ascii.isWhitespace;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const parseFromSliceLeaky = std.json.parseFromSliceLeaky;
 const hasMethod = std.meta.hasMethod;
@@ -13,15 +16,13 @@ const timestamp = std.time.timestamp;
 const core = @import("core.zig");
 
 const Authorization = core.net.headers.Authorization;
+const AuthorizationResult = core.routing.AuthorizationResult;
 
 const assertValidate = core.utils.assertValidate;
 const isContext = core.context.isContext;
+const validateRequirementChar = core.routing.ResourceOptions.validateRequirementChar;
 
 /// Thrid Party
-const zap = @import("zap");
-
-const Request = zap.Request;
-
 const jwt = @import("jwt");
 
 const validateMessage = jwt.validateMessage;
@@ -38,6 +39,10 @@ pub const ClaimsSet = struct {
                 return error.NameTooShort;
             if (self.name.len > max_name_len)
                 return error.NameTooLong;
+
+            for (self.name) |character| {
+                try validateRequirementChar(character);
+            }
         }
 
         pub fn allowsCreate(self: Permission) bool {
@@ -71,6 +76,11 @@ pub const ClaimsSet = struct {
         if (self.sub.len > max_sub_len)
             return error.SubTooLong;
 
+        for (self.sub) |character| {
+            if (!(isAlphanumeric(character) or character == '-' or character == '_'))
+                return error.InvalidCharacter;
+        }
+
         if (self.perms) |perms| {
             if (perms.len == 0)
                 return error.TooFewPerms;
@@ -99,6 +109,11 @@ pub const ClaimsSet = struct {
                     @compileError("Requirement with zero length found in `RequirementsSet`");
                 if (requirement.len > Permission.max_name_len)
                     @compileError("Requirement with length over `Permission.max_name_len` found in `RequirementsSet`");
+
+                for (requirement) |character| {
+                    validateRequirementChar(character) catch
+                        @compileError("Requirement with invalid character found in `RequirementsSet`");
+                }
 
                 for (RequirementsSet[(index + 1)..]) |check_requirement| {
                     if (eqlIgnoreCase(requirement, check_requirement))
@@ -222,11 +237,11 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
             authorization_header: *const Authorization,
             claims_set_dest: *ClaimsSetType,
             allocator: Allocator,
-        ) bool {
+        ) AuthorizationResult {
             assertValidate(self.validate());
 
             if (authorization_header.scheme != .bearer)
-                return false;
+                return .unauthorized;
 
             const message =
                 validateMessage(
@@ -234,7 +249,7 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     .HS256,
                     authorization_header.scheme.bearer,
                     .{ .key = self.key },
-                ) catch return false;
+                ) catch return .unauthorized;
 
             claims_set_dest.* =
                 parseFromSliceLeaky(
@@ -242,14 +257,16 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     allocator,
                     message,
                     .{ .allocate = .alloc_always },
-                ) catch return false;
+                ) catch return .unauthorized;
 
             claims_set_dest.validate() catch
-                return false;
+                return .unauthorized;
 
-            const validity: Validity = claims_set_dest.isValid(MethodType, RequirementsSet);
-
-            return validity == .valid;
+            switch (claims_set_dest.isValid(MethodType, RequirementsSet)) {
+                .invalid => return .forbidden,
+                .expired => return .unauthorized,
+                .valid => return .authorized,
+            }
         }
 
         pub fn deinit(self: *JWTAuthorizationProcessorType, allocator: Allocator) void {

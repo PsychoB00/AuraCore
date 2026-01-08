@@ -14,49 +14,28 @@ testing:
 units:
     - [] Create units
 
-application:
-    - [x] Create Application
-
-context:
-    - [x] Add init and deinit to Context
-
 json:
 0.0.13:
     - [] Remove zimdjson dependency, in favor of std
 
+utf8:
+    - [x] Do proper checks with utf8 
+
 net:
     - headers:
-        [x] Headers rework
-        [x] Add Host
-    - 0.0.18:
-        [x] Add User-Agent
-        [x] Add format, parse and validate to trait check IsHttpHeader
-        [x] Fix Host parsing and formating encoding
-    - 0.0.19:
-        [x] Fix isHttpHeader
-        [x] Add Content-Length
-        [x] Add Content-Type
-        [x] Add Authorization
-        [x] Define every EnforcedHeaders
+        - [] Add Date
+        - [] Add WWWAuthenticate
+        - [] Add Accept
+
+log:
+    - [] Move LoggingOnRequestProcessor to log 
 
 routing:
-    - router:
-        - [x] Rework authorization
-        - [x] Add isRouter trait check
-    - OnRequestProcessor:
-        - [x] Rework the trait check
-        - [x] Add option to have OnRequestProcessor == null in Router
-        - [x] Rework error functions to also state what is the status code of response
-    - AuthorizationProcessor:
-        - [x] Finish JWTAuthorizationProcessor
-    - resources:
-    - 0.0.16:
-        - [x] Rework QueryParameters to use Io and does utf8 decoding
-    - 0.0.19:
-        - [x] Fix StaticRoute for EnforcedHeaders
-    - 0.0.21:
-        - [x] Add AllowedMediaTypes
-    - 0.0.26:
-        - [x] Add ClaimsSet to APIResource
-    - Respose:
-        - [] Create Response struct
+    - StaticRoute:
+        - [x] Fix status codes for bad Authorization
+    - Result:
+        - [o] Create result structs
+        - ResultBody:
+            - [o] Create ResultBody
+        - ResultHeader:
+            - [] Create ResultHeader

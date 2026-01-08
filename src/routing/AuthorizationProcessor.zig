@@ -17,6 +17,12 @@ const zap = @import("zap");
 
 const Request = zap.Request;
 
+pub const AuthorizationResult = enum {
+    unauthorized,
+    forbidden,
+    authorized,
+};
+
 /// Trait check for AuthorizationProcessor
 ///
 /// - `Type` must be struct
@@ -29,7 +35,7 @@ const Request = zap.Request;
 ///     - `deinit` must be decleration of method with signature fn (*Type, Allocator) void
 /// - `Type` must have declaration of method for authorizing, named "authorize"
 ///     - `authorize` must be decleration of method with signature
-///       fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) bool
+///       fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) AuthorizationResult
 pub fn isAuthorizationProcessor(comptime Type: type) bool {
     if (@typeInfo(Type) != .@"struct")
         return false;
@@ -49,7 +55,7 @@ pub fn isAuthorizationProcessor(comptime Type: type) bool {
     const has_authorize =
         has_claims_set and
         hasMethod(Type, "authorize") and
-        @TypeOf(Type.authorize) == fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) bool;
+        @TypeOf(Type.authorize) == fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) AuthorizationResult;
 
     return has_init and has_deinit and has_authorize;
 }

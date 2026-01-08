@@ -69,6 +69,40 @@ pub fn isResourceParameters(comptime Type: type) bool {
     return has_parameters_type and has_structure and has_data;
 }
 
+pub const ResultType = enum {
+    header,
+    body,
+};
+
+/// Trait check for ResourceResult
+///
+/// - `Type` must be struct
+/// - `Type` must have declaration for type of result which it is, named "result_type"
+///     - `result_type` must be declaration of ResultType
+/// - `Type` must have declaration for type of structure which it uses, named "structure"
+///     - `structure` must be declaration of a type
+/// - `Type` must have field of its data named "data"
+///     - `data` must be field of `structure`
+pub fn isResourceResult(comptime Type: type) bool {
+    if (@typeInfo(Type) != .@"struct")
+        return false;
+
+    const has_result_type =
+        @hasDecl(Type, "result_type") and
+        @TypeOf(Type.result_type) == ResultType;
+
+    const has_structure =
+        @hasDecl(Type, "structure") and
+        @TypeOf(Type.structure) == type;
+
+    const has_data =
+        has_structure and
+        @hasField(Type, "data") and
+        @FieldType(Type, "data") == Type.structure;
+
+    return has_result_type and has_structure and has_data;
+}
+
 /// Structure for binding `Controller` and `Options` together to define REST API resource
 ///
 /// - `Controller` must be a struct type with at least one http method.
@@ -85,8 +119,11 @@ pub fn isResourceParameters(comptime Type: type) bool {
 ///   generation in Router.
 pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions) type {
     // `Options` correctness assertion
-    if (Options.authorize != null and Options.authorize.?.len == 0)
-        @compileError("`Options.authorize` must either be null or have one or more elements");
+    Options.validate() catch |err|
+        @compileError(comptimePrint(
+            "`Options` are invalid, cause {s}",
+            .{@errorName(err)},
+        ));
 
     // `Controller` correctness asssertion
     const controller_info = @typeInfo(Controller);
