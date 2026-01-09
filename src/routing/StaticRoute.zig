@@ -19,11 +19,14 @@ const fieldPtr = core.utils.fieldPtr;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 const isResourceParameters = core.routing.isResourceParameters;
+const isResourceResult = core.routing.isResourceResult;
 const methodToLower = core.net.methodToLower;
 
 const HeaderParameters = core.routing.HeaderParameters;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
+
+const Authorization = core.net.headers.Authorization;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -116,6 +119,46 @@ fn ResourceParameters(comptime MethodParametersType: type) type {
         .@"struct" = .{
             .layout = .auto,
             .fields = resource_parameters_fields[0..],
+            .decls = &.{},
+            .is_tuple = true,
+        },
+    });
+}
+
+/// Tuple type representing resource result of `MethodParametersType`
+fn ResourceResult(comptime MethodParametersType: type) type {
+    const method_parameters_info = @typeInfo(MethodParametersType);
+    var resource_result_count: usize = 0;
+
+    for (method_parameters_info.@"struct".fields) |field| {
+        if (isResourceResult(@typeInfo(field.type).pointer.child))
+            resource_result_count += 1;
+    }
+
+    var buffer: [resource_result_count]StructField = undefined;
+    var assign_index: usize = 0;
+
+    for (0..method_parameters_info.@"struct".fields.len) |index| {
+        const resource_result_type = @typeInfo(method_parameters_info.@"struct".fields[index].type).pointer.child;
+        if (!isResourceResult(resource_result_type))
+            continue;
+
+        buffer[assign_index] = .{
+            .name = std.fmt.comptimePrint("{}", .{assign_index}),
+            .type = resource_result_type,
+            .default_value_ptr = null,
+            .is_comptime = false,
+            .alignment = @alignOf(resource_result_type),
+        };
+        assign_index += 1;
+    }
+
+    const resource_result_fields = buffer;
+
+    return @Type(.{
+        .@"struct" = .{
+            .layout = .auto,
+            .fields = resource_result_fields[0..],
             .decls = &.{},
             .is_tuple = true,
         },
@@ -227,64 +270,44 @@ pub fn StaticRoute(
 
             // Enforced headers parsing
             const enforced_headers_type =
-                HeaderParameters(
-                    EnforcedHeaders(
-                        EnforcedHeadersTag.generate(
-                            resource_options.authorize != null,
-                            false,
-                        ),
+                HeaderParameters(EnforcedHeaders(
+                    EnforcedHeadersTag.generate(
+                        resource_options.authorize != null,
+                        false,
                     ),
-                );
+                ));
+
             var enforced_headers: enforced_headers_type = undefined;
 
-            enforced_headers_type.parse(
-                resource_options.strict_headers,
-                request,
-                &enforced_headers,
-                allocator,
-            ) catch |err| switch (err) {
-                error.Unauthorized => {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                        processor.invalidAuthorization(.unauthorized);
-                    request.setStatus(.unauthorized);
-                    return;
-                },
-                else => {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                        processor.invalidParameters(.header, .bad_request, err);
-                    request.setStatus(.bad_request);
-                    return;
-                },
-            };
+            const successful_header_parse =
+                _parseHeaderParameters(
+                    enforced_headers_type,
+                    request,
+                    &enforced_headers,
+                    allocator,
+                    if (AuthorizationProcessorType != null) &processor else {},
+                );
+
+            if (!successful_header_parse)
+                return;
 
             // Authorization
             if (comptime Options.authorize != null) {
                 var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
 
-                const authorization_result =
-                    self.authorization_processor.authorize(
+                const successful_authorization =
+                    _authorize(
                         MethodType,
-                        Options.authorize.?,
+                        &self.authorization_processor,
                         &enforced_headers.data.authorization,
                         &claims_set,
+                        request,
                         allocator,
+                        if (AuthorizationProcessorType != null) &processor else {},
                     );
 
-                switch (authorization_result) {
-                    .unauthorized => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.unauthorized);
-                        request.setStatus(.unauthorized);
-                        return;
-                    },
-                    .forbidden => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.forbidden);
-                        request.setStatus(.forbidden);
-                        return;
-                    },
-                    .authorized => {},
-                }
+                if (!successful_authorization)
+                    return;
             }
 
             if (comptime MethodType == .GET) {
@@ -343,6 +366,7 @@ pub fn StaticRoute(
             context: *ContextType,
             request: *const Request,
         ) void {
+            // Init OnRequestProcessor
             var processor: (OnRequestProcessorType orelse void) = undefined;
             if (comptime OnRequestProcessorType != null) {
                 processor.init(StaticRouteType, MethodType, allocator, context, request);
@@ -358,17 +382,18 @@ pub fn StaticRoute(
 
             const method_fn = @field(ResourceType.controller_t, methodToLower(MethodType));
             const method_type = @TypeOf(method_fn);
-            const resource_parameters_type = ResourceParameters(MethodParameters(method_type));
+            const method_parameters_type = MethodParameters(method_type);
+
+            // Parse ResourceParameters and do related actions and checks
+            const resource_parameters_type = ResourceParameters(method_parameters_type);
 
             var resource_parameters: resource_parameters_type = undefined;
 
-            // Parse parameters
-            const resource_parameter_info = @typeInfo(resource_parameters_type);
-
+            // Get HeaderParameters info
             comptime var header_parameters_field: ?StructField = null;
             comptime var has_body_parameters: bool = false;
 
-            inline for (resource_parameter_info.@"struct".fields) |field| {
+            inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
                     inline .header => header_parameters_field = field,
                     inline .body => has_body_parameters = true,
@@ -376,43 +401,35 @@ pub fn StaticRoute(
                 }
             }
 
-            // Parse EnforcedHeaders or HeaderParameters if `resource_parameters_type` has it
             const header_parameters_type =
                 comptime if (header_parameters_field == null)
-                    HeaderParameters(
-                        EnforcedHeaders(
-                            EnforcedHeadersTag.generate(
-                                resource_options.authorize != null,
-                                has_body_parameters,
-                            ),
+                    HeaderParameters(EnforcedHeaders(
+                        EnforcedHeadersTag.generate(
+                            resource_options.authorize != null,
+                            has_body_parameters,
                         ),
-                    )
+                    ))
                 else
                     header_parameters_field.?.type;
+
+            // Parse EnforcedHeaders or HeaderParameters
             var header_parameters: header_parameters_type = undefined;
             var header_parameters_ptr: *header_parameters_type = undefined;
 
             if (comptime header_parameters_field == null) {
-                // Only EnforcedHeaders
-                header_parameters_type.parse(
-                    resource_options.strict_headers,
-                    request,
-                    &header_parameters,
-                    allocator,
-                ) catch |err| switch (err) {
-                    error.Unauthorized => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.unauthorized);
-                        request.setStatus(.unauthorized);
-                        return;
-                    },
-                    else => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                            processor.invalidParameters(.header, .bad_request, err);
-                        request.setStatus(.bad_request);
-                        return;
-                    },
-                };
+                // EnforcedHeaders
+                const successful_header_parse =
+                    _parseHeaderParameters(
+                        header_parameters_type,
+                        request,
+                        &header_parameters,
+                        allocator,
+                        if (AuthorizationProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_parse)
+                    return;
+
                 header_parameters_ptr = &header_parameters;
             } else {
                 // HeaderParameters
@@ -421,25 +438,19 @@ pub fn StaticRoute(
                     header_parameters_field.?.name,
                     &resource_parameters,
                 );
-                header_parameters_field.?.type.parse(
-                    resource_options.strict_headers,
-                    request,
-                    parameters_ptr,
-                    allocator,
-                ) catch |err| switch (err) {
-                    error.Unauthorized => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.unauthorized);
-                        request.setStatus(.unauthorized);
-                        return;
-                    },
-                    else => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                            processor.invalidParameters(.header, .bad_request, err);
-                        request.setStatus(.bad_request);
-                        return;
-                    },
-                };
+
+                const successful_header_parse =
+                    _parseHeaderParameters(
+                        header_parameters_field.?.type,
+                        request,
+                        parameters_ptr,
+                        allocator,
+                        if (AuthorizationProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_parse)
+                    return;
+
                 header_parameters_ptr = parameters_ptr;
             }
 
@@ -447,32 +458,22 @@ pub fn StaticRoute(
             var claims_set: if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void = undefined;
 
             if (comptime Options.authorize != null) {
-                const authorization_result =
-                    self.authorization_processor.authorize(
+                const successful_authorization =
+                    _authorize(
                         MethodType,
-                        Options.authorize.?,
+                        &self.authorization_processor,
                         &header_parameters_ptr.data.authorization,
                         &claims_set,
+                        request,
                         allocator,
+                        if (AuthorizationProcessorType != null) &processor else {},
                     );
 
-                switch (authorization_result) {
-                    .unauthorized => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.unauthorized);
-                        request.setStatus(.unauthorized);
-                        return;
-                    },
-                    .forbidden => {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
-                            processor.invalidAuthorization(.forbidden);
-                        request.setStatus(.forbidden);
-                        return;
-                    },
-                    .authorized => {},
-                }
+                if (!successful_authorization)
+                    return;
             }
 
+            // Parse all yet to be parsed parameters
             var query_parsed: ?bool = if (request.query == null) null else false;
             var body_parsed: ?bool = if (request.body == null) null else false;
 
@@ -486,12 +487,7 @@ pub fn StaticRoute(
                 switch (field.type.parameters_type) {
                     inline .path => {
                         // Path
-                        field.type.parse(
-                            Path,
-                            request,
-                            parameters_ptr,
-                            allocator,
-                        ) catch |err| {
+                        field.type.parse(Path, request, parameters_ptr, allocator) catch |err| {
                             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
                                 processor.invalidParameters(.path, .not_found, err);
                             request.setStatus(.not_found);
@@ -500,11 +496,7 @@ pub fn StaticRoute(
                     },
                     inline .query => {
                         // Query
-                        field.type.parse(
-                            request,
-                            parameters_ptr,
-                            allocator,
-                        ) catch |err| {
+                        field.type.parse(request, parameters_ptr, allocator) catch |err| {
                             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
                                 processor.invalidParameters(.query, .not_found, err);
                             request.setStatus(.not_found);
@@ -518,13 +510,7 @@ pub fn StaticRoute(
                     },
                     inline .body => {
                         // Body
-                        field.type.parse(
-                            request,
-                            parameters_ptr,
-                            &header_parameters_ptr.data.content_length,
-                            &header_parameters_ptr.data.content_type,
-                            allocator,
-                        ) catch |err| {
+                        field.type.parse(request, parameters_ptr, &header_parameters_ptr.data.content_length, &header_parameters_ptr.data.content_type, allocator) catch |err| {
                             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
                                 processor.invalidParameters(.body, .bad_request, err);
                             request.setStatus(.bad_request);
@@ -549,43 +535,70 @@ pub fn StaticRoute(
                 return;
             }
 
+            // Create ResourceResult
+            const resource_result_type = ResourceResult(method_parameters_type);
+
+            var resource_result: resource_result_type = undefined;
+
             // Call method
             const call_result = @call(
                 .always_inline,
                 method_fn,
                 _buildMethodParameters(
                     MethodParameters(method_type),
-                    allocator,
-                    context,
                     &resource_parameters,
                     if (AuthorizationProcessorType != null) &claims_set else void,
+                    context,
+                    allocator,
+                    &resource_result,
                 ),
             );
 
+            // Get status
+            var status: StatusCode = undefined;
             if (comptime @typeInfo(@TypeOf(call_result)) == .error_union) {
-                const status = call_result catch |err| {
+                status = call_result catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "controllerError")))
                         processor.controllerError(.internal_server_error, err);
                     request.setStatus(.internal_server_error);
                     return;
                 };
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                    processor.success(.ok);
-                request.setStatus(status);
-            } else {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                    processor.success(.ok);
-                request.setStatus(call_result);
+            } else status = call_result;
+
+            // Set ResourceResult
+            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
+                switch (field.type.result_type) {
+                    inline .header => unreachable,
+                    inline .body => {
+                        const result_ptr = fieldPtr(
+                            resource_result_type,
+                            field.name,
+                            &resource_result,
+                        );
+
+                        request.sendBody(result_ptr.data) catch |err| {
+                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
+                                processor.sendBodyError(.internal_server_error, err);
+                            request.setStatus(.internal_server_error);
+                            return;
+                        };
+                    },
+                }
             }
+
+            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
+                processor.success(.ok);
+            request.setStatus(status);
         }
 
         /// Builds MethodParameters from already initialized parameters
         fn _buildMethodParameters(
             comptime ParametersType: type,
-            allocator: Allocator,
-            context: *ContextType,
             resource_parameters: *const ResourceParameters(ParametersType),
             claims_set: if (AuthorizationProcessorType != null) *AuthorizationProcessorType.?.claims_set_t else void,
+            context: *ContextType,
+            allocator: Allocator,
+            resource_result: *ResourceResult(ParametersType),
         ) ParametersType {
             const parameters_info = @typeInfo(ParametersType);
             var res: ParametersType = undefined;
@@ -610,10 +623,86 @@ pub fn StaticRoute(
                                 resource_parameters,
                             );
                     }
+                } else if (comptime isResourceResult(field_type)) {
+                    const resource_result_info = @typeInfo(ResourceResult(ParametersType));
+
+                    inline for (resource_result_info.@"struct".fields) |res_result_field| {
+                        if (comptime res_result_field.type.result_type == field_type.result_type)
+                            fieldPtr(ParametersType, field.name, &res).* = fieldPtr(
+                                ResourceResult(ParametersType),
+                                res_result_field.name,
+                                resource_result,
+                            );
+                    }
                 } else unreachable;
             }
 
             return res;
+        }
+
+        fn _parseHeaderParameters(
+            comptime HeaderParametersType: type,
+            request: *const Request,
+            header_parameters: *HeaderParametersType,
+            allocator: Allocator,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            HeaderParametersType.parse(
+                resource_options.strict_headers,
+                request,
+                header_parameters,
+                allocator,
+            ) catch |err| switch (err) {
+                error.Unauthorized => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                        processor.invalidAuthorization(.unauthorized);
+                    request.setStatus(.unauthorized);
+                    return false;
+                },
+                else => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                        processor.invalidParameters(.header, .bad_request, err);
+                    request.setStatus(.bad_request);
+                    return false;
+                },
+            };
+
+            return true;
+        }
+
+        fn _authorize(
+            comptime MethodType: Method,
+            authorization_processor: *(AuthorizationProcessorType.?),
+            authorization_header: *const Authorization,
+            claims_set: *AuthorizationProcessorType.?.claims_set_t,
+            request: *const Request,
+            allocator: Allocator,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            const authorization_result =
+                authorization_processor.authorize(
+                    MethodType,
+                    Options.authorize.?,
+                    authorization_header,
+                    &claims_set,
+                    allocator,
+                );
+
+            switch (authorization_result) {
+                .unauthorized => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                        processor.invalidAuthorization(.unauthorized);
+                    request.setStatus(.unauthorized);
+                    return false;
+                },
+                .forbidden => {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
+                        processor.invalidAuthorization(.forbidden);
+                    request.setStatus(.forbidden);
+                    return false;
+                },
+                .authorized => return true,
+            }
         }
     };
 }

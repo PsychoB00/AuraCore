@@ -18,6 +18,7 @@ const isQueryParameters = core.routing.isQueryParameters;
 const isHeaderParameters = core.routing.isHeaderParameters;
 const isBodyParameters = core.routing.isBodyParameters;
 const isContext = core.context.isContext;
+const isResultBody = core.routing.isResultBody;
 
 /// Third Party
 const zap = @import("zap");
@@ -114,6 +115,7 @@ pub fn isResourceResult(comptime Type: type) bool {
 ///     - *const ClaimsSet
 ///     - *Context
 ///     - Allocator
+///     - *ResultBody
 /// - Return type of http method must be either StatusCode or !StatusCode.
 /// - For brevity of APIResource type declaration, exact Context type and ClaimsSet type are not checked until StaticRoute
 ///   generation in Router.
@@ -144,21 +146,23 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
 
     // Methods correctness assertion
     var has_methods = false;
-    var claims_set_type: ?type = null;
-    var context_type: ?type = null;
+
+    var path_param_found: ?type = null;
+    var query_param_found: ?type = null;
+    var header_param_found: ?type = null;
+    var body_param_found: ?type = null;
+    var claims_set_param_found: ?type = null;
+    var context_param_found: ?type = null;
+    var allocator_param_found = false;
+    var result_body_found: ?type = null;
 
     for (controller_info.@"struct".decls) |decl| {
         switch (@typeInfo(@TypeOf(@field(Controller, decl.name)))) {
             .@"fn" => |info| {
                 // Name validity assertion
-                const checked_method_name =
-                    if (Options.authorize != null)
-                        function_names
-                    else
-                        function_names[1..];
                 var valid_method_name_found: ?[]const u8 = null;
 
-                for (checked_method_name) |name| methode_name_loop: {
+                for (function_names) |name| methode_name_loop: {
                     if (eql(u8, name, decl.name)) {
                         has_methods = true;
                         valid_method_name_found = decl.name;
@@ -172,14 +176,6 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                     ));
 
                 // Parameters correctness assertion
-                var path_param_found: ?type = null;
-                var query_param_found: ?type = null;
-                var header_param_found: ?type = null;
-                var body_param_found: ?type = null;
-                var claims_set_param_found = false;
-                var context_param_found = false;
-                var allocator_param_found = false;
-
                 for (info.params) |param| {
                     if (param.type == null)
                         @compileError(comptimePrint(
@@ -239,33 +235,41 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                 } else {
                                     if (Options.authorize != null) {
                                         // ClaimsSet
-                                        if (claims_set_param_found)
+                                        if (claims_set_param_found != null)
                                             @compileError(comptimePrint(
                                                 "Duplicate ClaimsSet found in {s}.{s}",
                                                 .{ @typeName(Controller), decl.name },
                                             ));
-                                        claims_set_type = param_info.child;
-                                        claims_set_param_found = true;
+                                        claims_set_param_found = param_info.child;
                                     } else @compileError(comptimePrint(
                                         "Unsupported parameter type found in {s}.{s}",
                                         .{ @typeName(Controller), decl.name },
                                     ));
                                 }
                             } else {
-                                // Context
-                                if (!isContext(param_info.child) or
-                                    (context_type != null and context_type != param_info.child))
-                                    @compileError(comptimePrint(
-                                        "Unsupported parameter type found in {s}.{s}",
-                                        .{ @typeName(Controller), decl.name },
-                                    ));
-                                if (context_param_found)
-                                    @compileError(comptimePrint(
-                                        "Duplicate Context parameter found in {s}.{s}",
-                                        .{ @typeName(Controller), decl.name },
-                                    ));
-                                context_type = param_info.child;
-                                context_param_found = true;
+                                if (isResultBody(param_info.child)) {
+                                    // Result body
+                                    if (result_body_found != null)
+                                        @compileError(comptimePrint(
+                                            "Duplicate result Body found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    result_body_found = param_info.child;
+                                } else {
+                                    // Context
+                                    if (!isContext(param_info.child) or
+                                        (context_param_found != null and context_param_found != param_info.child))
+                                        @compileError(comptimePrint(
+                                            "Unsupported parameter type found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    if (context_param_found != null)
+                                        @compileError(comptimePrint(
+                                            "Duplicate Context parameter found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    context_param_found = param_info.child;
+                                }
                             }
                         },
                         else => @compileError(comptimePrint(
@@ -319,8 +323,8 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
             .{@typeName(Controller)},
         ));
 
-    const infered_context_type = context_type;
-    const infered_claims_set_type = claims_set_type;
+    const infered_context_type = context_param_found;
+    const infered_claims_set_type = claims_set_param_found;
 
     return struct {
         const APIResourceType = @This();

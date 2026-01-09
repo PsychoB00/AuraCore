@@ -33,9 +33,12 @@ log:
 routing:
     - StaticRoute:
         - [x] Fix status codes for bad Authorization
+        - [x] Clean up the code duplicates
+        - [] Implement ResultBody
     - Result:
         - [o] Create result structs
         - ResultBody:
-            - [o] Create ResultBody
+            - [x] Create ResultBody
+            - [] Add formating
         - ResultHeader:
             - [] Create ResultHeader

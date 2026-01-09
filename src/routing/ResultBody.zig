@@ -12,6 +12,8 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType
         pub const result_type: ResultType = .body;
         pub const structure = Structure;
         pub const result_media_type = ResultMediaType;
+
+        data: Structure,
     };
 }
 

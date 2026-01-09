@@ -27,6 +27,7 @@ const EnforcedHeaders = core.routing.EnforcedHeaders;
 const BodyParameters = core.routing.BodyParameters;
 const MediaType = core.net.headers.MediaType;
 const CommonMediaTypes = core.net.headers.CommonMediaTypes;
+const ResultBody = core.routing.ResultBody;
 
 /// Third Party
 const zap = @import("zap");
@@ -82,20 +83,17 @@ const ResourceTree = struct {
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn post(
-                    body_params: *const BodyParameters(
-                        []const u8,
-                        CommonMediaTypes.text,
-                    ),
-                    claims_set: *const ClaimsSet,
+                pub fn get(
+                    result_body: *ResultBody([]const u8, null),
                 ) !StatusCode {
-                    _ = body_params;
-                    _ = claims_set;
+                    result_body.* = .{
+                        .data = "Hello world!",
+                    };
                     return .ok;
                 }
             },
             .{
-                .authorize = &.{"test"},
+                .authorize = null,
             },
         );
     };
