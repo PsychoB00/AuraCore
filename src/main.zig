@@ -84,7 +84,7 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    result_body: *ResultBody([]const u8, null),
+                    result_body: *ResultBody([]const u8, CommonMediaTypes.text),
                 ) !StatusCode {
                     result_body.* = .{
                         .data = "Hello world!",
@@ -93,7 +93,7 @@ const ResourceTree = struct {
                 }
             },
             .{
-                .authorize = null,
+                .authorize = &.{"test"},
             },
         );
     };

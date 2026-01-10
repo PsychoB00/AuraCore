@@ -8,7 +8,9 @@ const WriterError = Writer.Error;
 const Reader = std.Io.Reader;
 
 const assert = std.debug.assert;
+const isAscii = std.ascii.isAscii;
 const isAlphanumeric = std.ascii.isAlphanumeric;
+const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 const hasMethod = std.meta.hasMethod;
 const eql = std.mem.eql;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
@@ -26,6 +28,7 @@ pub const ContentType = @import("ContentType.zig").ContentType;
 pub const Authorization = @import("Authorization.zig").Authorization;
 
 const validateJsonType = core.json.validateJsonType;
+const validateJsonValue = core.json.validateValue;
 
 pub const HttpHeaderType = enum {
     request,
@@ -60,28 +63,34 @@ const MediaTypeTag = enum {
 
 /// Http header token assosiated with Content-Type and Accept
 pub const MediaType = union(MediaTypeTag) {
-    const AplicationSubtypeTag = enum {
+    const ApplicationSubtypeTag = enum {
         json,
         wildcard,
     };
 
-    const AplicationSubtype = union(AplicationSubtypeTag) {
+    pub const ApplicationSubtype = union(ApplicationSubtypeTag) {
         pub const max_value_len: usize = 4;
 
         json: void,
         wildcard: void,
 
-        pub fn validateType(comptime Self: AplicationSubtype, comptime Type: type) !void {
+        pub fn validateType(comptime Self: ApplicationSubtype, comptime Type: type) !void {
             switch (Self) {
                 .json, .wildcard => try validateJsonType(Type),
             }
         }
 
-        pub fn isWildcard(self: AplicationSubtype) bool {
+        pub fn validateValue(comptime Self: ApplicationSubtype, comptime Type: type, value: *const Type) !void {
+            switch (Self) {
+                .json, .wildcard => try validateJsonValue(Type, value),
+            }
+        }
+
+        pub fn isWildcard(self: ApplicationSubtype) bool {
             return self == .wildcard;
         }
 
-        pub fn areOverlapping(a: AplicationSubtype, b: AplicationSubtype) bool {
+        pub fn areOverlapping(a: ApplicationSubtype, b: ApplicationSubtype) bool {
             if (a == .wildcard or b == .wildcard)
                 return true;
 
@@ -91,14 +100,14 @@ pub const MediaType = union(MediaTypeTag) {
             }
         }
 
-        pub fn format(self: AplicationSubtype, writer: *Writer) WriterError!void {
+        pub fn format(self: ApplicationSubtype, writer: *Writer) WriterError!void {
             switch (self) {
                 .json => try writer.writeAll("json"),
                 .wildcard => try writer.writeByte('*'),
             }
         }
 
-        pub fn parse(self: *AplicationSubtype, reader: *Reader) anyerror!void {
+        pub fn parse(self: *ApplicationSubtype, reader: *Reader) anyerror!void {
             const application_subtype_value = try reader.takeDelimiterExclusive(';');
 
             if (eqlIgnoreCase(application_subtype_value, "json")) {
@@ -123,6 +132,21 @@ pub const MediaType = union(MediaTypeTag) {
 
             utf_8,
             us_ascii,
+
+            pub fn validateText(self: Charset, text: []const u8) !void {
+                switch (self) {
+                    .utf_8 => {
+                        if (!utf8ValidateSlice(text))
+                            return error.InvalidEncoding;
+                    },
+                    .us_ascii => {
+                        for (text) |character| {
+                            if (!isAscii(character))
+                                return error.InvalidEncoding;
+                        }
+                    },
+                }
+            }
 
             pub fn format(self: Charset, writer: *Writer) WriterError!void {
                 try writer.writeAll("charset=");
@@ -178,12 +202,34 @@ pub const MediaType = union(MediaTypeTag) {
         wildcard: void,
 
         pub fn validateType(comptime Self: TextSubtype, comptime Type: type) !void {
-            switch (Self) {
-                .plain => {
-                    if (Type != []const u8)
-                        return error.InvalidTextType;
-                },
-                .html, .wildcard => return error.UnimplementedParsing,
+            _ = Self;
+
+            if (Type != []const u8)
+                return error.InvalidTextType;
+        }
+
+        pub fn validateText(text: []const u8, charset: ?Charset) !void {
+            if (charset == null) {
+                if (utf8ValidateSlice(text))
+                    return;
+
+                for (text) |character| {
+                    if (!isAscii(character))
+                        return error.InvalidEncoding;
+                }
+            } else {
+                switch (charset.?) {
+                    .utf_8 => {
+                        if (!utf8ValidateSlice(text))
+                            return error.InvalidEncoding;
+                    },
+                    .us_ascii => {
+                        for (text) |character| {
+                            if (!isAscii(character))
+                                return error.InvalidEncoding;
+                        }
+                    },
+                }
             }
         }
 
@@ -243,18 +289,18 @@ pub const MediaType = union(MediaTypeTag) {
         }
     };
 
-    pub const max_value_len: usize = 12 + AplicationSubtype.max_value_len;
+    pub const max_value_len: usize = 12 + ApplicationSubtype.max_value_len;
 
-    application: AplicationSubtype,
+    application: ApplicationSubtype,
     text: TextSubtype,
     wildcard: void,
 
     pub fn validateType(comptime Self: MediaType, comptime Type: type) !void {
         switch (Self) {
-            .application => |application| try comptime AplicationSubtype.validateType(application, Type),
+            .application => |application| try comptime ApplicationSubtype.validateType(application, Type),
             .text => |text| try comptime TextSubtype.validateType(text, Type),
             .wildcard => {
-                try comptime AplicationSubtype.validateType(AplicationSubtype{ .wildcard = {} }, Type);
+                try comptime ApplicationSubtype.validateType(ApplicationSubtype{ .wildcard = {} }, Type);
                 try comptime TextSubtype.validateType(TextSubtype{ .wildcard = {} }, Type);
             },
         }

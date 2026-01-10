@@ -298,7 +298,7 @@ pub fn StaticRoute(
                 const successful_authorization =
                     _authorize(
                         MethodType,
-                        &self.authorization_processor,
+                        self.authorization_processor,
                         &enforced_headers.data.authorization,
                         &claims_set,
                         request,
@@ -461,7 +461,7 @@ pub fn StaticRoute(
                 const successful_authorization =
                     _authorize(
                         MethodType,
-                        &self.authorization_processor,
+                        self.authorization_processor,
                         &header_parameters_ptr.data.authorization,
                         &claims_set,
                         request,
@@ -672,7 +672,7 @@ pub fn StaticRoute(
 
         fn _authorize(
             comptime MethodType: Method,
-            authorization_processor: *(AuthorizationProcessorType.?),
+            authorization_processor: *const (AuthorizationProcessorType.?),
             authorization_header: *const Authorization,
             claims_set: *AuthorizationProcessorType.?.claims_set_t,
             request: *const Request,
@@ -684,7 +684,7 @@ pub fn StaticRoute(
                     MethodType,
                     Options.authorize.?,
                     authorization_header,
-                    &claims_set,
+                    claims_set,
                     allocator,
                 );
 

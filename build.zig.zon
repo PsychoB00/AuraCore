@@ -9,11 +9,6 @@
             .hash = "zeit-0.6.0-5I6bk0J9AgCVa0nnyL0lNY9Xa9F68hHq-ZarhuXNV-Jb",
         },
 
-        .zimdjson = .{
-            .url = "git+https://github.com/EzequielRamis/zimdjson.git#0.15.x",
-            .hash = "zimdjson-0.2.0-89pgxYQsBgAdkYbZS5mcwkP_LfXRQ8ync3komv9QVoOc",
-        },
-
         .zap = .{
             .url = "git+https://github.com/zigzap/zap#v0.11.0",
             .hash = "zap-0.10.6-GoeB8xCEJABLgoiZjWZMMT5TsoZ5OO2EZe6j24RTUYEH",

@@ -2,30 +2,29 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Scanner = std.json.Scanner;
 
 const comptimePrint = std.fmt.comptimePrint;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
-const isAscii = std.ascii.isAscii;
 
 /// Aura
 const core = @import("../core.zig");
 
 const ParametersType = core.routing.ParametersType;
 const MediaType = core.net.headers.MediaType;
+const ApplicationSubtype = MediaType.ApplicationSubtype;
+const TextSubtype = MediaType.TextSubtype;
+const Charset = TextSubtype.Charset;
 
 const ContentLength = core.net.headers.ContentLength;
 const ContentType = core.net.headers.ContentType;
 
 const isResourceParameters = core.routing.isResourceParameters;
-
-const asAny = core.json.asAny;
+const parseLeaky = core.json.parseLeaky;
 
 /// Third Party
 const zap = @import("zap");
 const Request = zap.Request;
-
-const zimdjson = @import("zimdjson");
-const JsonParser = zimdjson.ondemand.FullParser(.default);
 
 /// Parameters for larger and more complex data
 ///
@@ -34,7 +33,7 @@ const JsonParser = zimdjson.ondemand.FullParser(.default);
 ///   MediaTypes are allowed to be parsed.
 /// - `AllowedMediaTypes` can have wildcards
 /// - MediaTypes in `AllowedMediaTypes` mustn't overlap with other allowed MediaTypes
-/// - `Structure` must be valid parsing type for every MediaType in `AllowedMediaTypes
+/// - `Structure` must be valid parsing type for every MediaType in `AllowedMediaTypes`
 /// - If any memory needs to be allocated during parsing of `Structure`, it will be allocated with
 ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
 ///   the lifetime of the memory to lifetime of the zap.Request.
@@ -88,6 +87,8 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
     }
 
     return struct {
+        const json_array_capacity: usize = 8;
+
         const BodyParametersType = @This();
         pub const parameters_type: ParametersType = .body;
         pub const structure = Structure;
@@ -126,56 +127,48 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
 
             switch (content_type.media_type) {
                 .application => |application| {
+                    (comptime ApplicationSubtype.validateType(.wildcard, Structure)) catch
+                        return error.RuntimeUnreachable;
+
                     switch (application) {
-                        .json => {
-                            // JSON
-                            if (!utf8ValidateSlice(request.body.?))
-                                return error.InvalidEncoding;
-
-                            var parser = JsonParser.init;
-                            defer parser.deinit(allocator);
-
-                            const document = try parser.parseFromSlice(allocator, request.body.?);
-                            const value = try document.asAny();
-                            dest.data = try asAny(JsonParser, structure_type, &value, allocator);
+                        .json, .wildcard => {
+                            var scanner = Scanner.initCompleteInput(allocator, request.body.?);
+                            defer scanner.deinit();
+                            try parseLeaky(Structure, BodyParametersType.json_array_capacity, &scanner, &dest.data, allocator);
+                            const end_of_document_token = try scanner.next();
+                            if (end_of_document_token != .end_of_document)
+                                return error.UnclosedDocument;
                         },
-                        .wildcard => unreachable,
                     }
+
+                    try ApplicationSubtype.validateValue(.wildcard, Structure, &dest.data);
                 },
                 .text => |text| {
+                    (comptime TextSubtype.validateType(.wildcard, structure_type)) catch
+                        return error.RuntimeUnreachable;
+
+                    var charset: ?Charset = null;
                     switch (text) {
                         .plain => |plain| {
-                            // Plain text
-                            // NOTE: This is nessesary because I can't figure out how to get comptime evaluated switch for allowed media type,
-                            //       meaning that I have to "prune" branches from inside manually. Otherwise assigning to
-                            //       `dest.data` will lead to an compilation error because although the state can't never occur during runtime,
-                            //       it is still evaluated during compilation so there is assigned type missmatch.
-                            (comptime @TypeOf(text).validateType(@TypeOf(text){ .plain = null }, structure_type)) catch
-                                return error.RuntimeUnreachable;
-
-                            const charset =
+                            charset =
                                 if (plain != null)
                                     plain.?
                                 else
-                                    allowed_media_type.?.text.plain.?;
-
-                            switch (charset) {
-                                .utf_8 => {
-                                    if (!utf8ValidateSlice(request.body.?))
-                                        return error.InvalidEncoding;
-                                },
-                                .us_ascii => {
-                                    for (request.body.?) |character| {
-                                        if (!isAscii(character))
-                                            return error.InvalidEncoding;
-                                    }
-                                },
-                            }
-
-                            dest.data = try allocator.dupe(u8, request.body.?);
+                                    allowed_media_type.?.text.plain;
                         },
-                        .html, .wildcard => unreachable,
+                        .html => |html| {
+                            charset =
+                                if (html != null)
+                                    html.?
+                                else
+                                    allowed_media_type.?.text.html;
+                        },
+                        .wildcard => {},
                     }
+
+                    try TextSubtype.validateText(request.body.?, charset);
+
+                    dest.data = try allocator.dupe(u8, request.body.?);
                 },
                 .wildcard => unreachable,
             }

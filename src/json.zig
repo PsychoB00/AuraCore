@@ -2,25 +2,24 @@
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
+const Scanner = std.json.Scanner;
+const ArrayList = std.ArrayList;
 
-const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
+const parseInt = std.fmt.parseInt;
+const parseFloat = std.fmt.parseFloat;
 const eql = std.mem.eql;
 const stringToEnum = std.meta.stringToEnum;
+const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
 /// Aura
 const core = @import("core.zig");
 
 const fieldPtr = core.utils.fieldPtr;
-const assertValidate = core.utils.assertValidate;
 
 /// Third Party
 const zeit = @import("zeit");
 const Time = zeit.Time;
-
-pub const ParseError = error{
-    InvalidValueFormatting,
-};
 
 /// Validates `Type` against AuraStandard
 pub fn validateJsonType(comptime Type: type) !void {
@@ -30,6 +29,8 @@ pub fn validateJsonType(comptime Type: type) !void {
             // For string, []const u8 is a slice and u8 is valid json type
             if (info.size != .slice)
                 return error.NonslicePointer;
+            if (!info.is_const)
+                return error.NonconstPointer;
 
             return validateJsonType(info.child);
         },
@@ -45,10 +46,7 @@ pub fn validateJsonType(comptime Type: type) !void {
             if (info.is_tuple)
                 return error.TupleFound;
 
-            if (info.decls.len > 0)
-                return error.DeclaretionsFound;
-
-            for (info.fields) |field| {
+            inline for (info.fields) |field| {
                 return validateJsonType(field.type);
             }
         },
@@ -56,157 +54,198 @@ pub fn validateJsonType(comptime Type: type) !void {
     }
 }
 
-/// Parse json AnyValue to a value of `Type`
+/// Validates `value` of `Type` against AuraStandard
+pub fn validateValue(comptime Type: type, value: *const Type) !void {
+    switch (@typeInfo(Type)) {
+        inline .bool, .int, .float => {},
+        inline .pointer => |pointer| {
+            // For string, []const u8 is a slice and u8 is valid json type
+            if (comptime pointer.size != .slice)
+                return error.NonslicePointer;
+            if (comptime !pointer.is_const)
+                return error.NonconstPointer;
+
+            if (comptime pointer.child == u8) {
+                if (value.*.len == 0)
+                    return error.StringTooShort;
+
+                if (!utf8ValidateSlice(value.*))
+                    return error.InvalidEncoding;
+            } else {
+                if (value.*.len == 0)
+                    return error.ArrayToShort;
+
+                for (value.*) |*element| {
+                    try validateValue(pointer.child, element);
+                }
+            }
+        },
+        inline .optional => |optional| {
+            if (value.* != null)
+                try validateValue(optional.child, &(value.*.?));
+        },
+        inline .@"enum" => |@"enum"| {
+            if (comptime !@"enum".is_exhaustive)
+                return error.InexhaustiveEnum;
+        },
+        inline .@"struct" => |info| {
+            if (comptime Type == Time)
+                return;
+
+            if (comptime info.is_tuple)
+                return error.TupleFound;
+
+            inline for (info.fields) |field| {
+                const field_ptr = fieldPtr(Type, field.name, value);
+                try validateValue(field.type, field_ptr);
+            }
+        },
+        inline else => return error.InvalidType,
+    }
+}
+
+/// Parses from `scanner` into `dest`
 ///
-/// String values and array values allocated by this functions are owned by result, free them accordingly
-pub fn asAny(comptime ParserType: type, comptime Type: type, value: *const ParserType.AnyValue, allocator: Allocator) !Type {
+/// `allocator` MUST BE arena allocator
+pub fn parseLeaky(comptime Type: type, comptime ArrayCapacity: usize, scanner: *Scanner, dest: *Type, allocator: Allocator) !void {
     comptime validateJsonType(Type) catch |err|
         @compileError(comptimePrint(
-            "`Type` cannot be represented by json, cause {s}",
+            "`Type` can't be represented in json, cause {s}",
             .{@errorName(err)},
         ));
 
+    const token_type = try scanner.peekNextTokenType();
+
     switch (@typeInfo(Type)) {
-        inline .bool => {
+        .bool => {
             // Bool
-            if (value.* != .bool)
-                return ParserType.Error.IncorrectType;
+            if (!(token_type == .false or token_type == .true))
+                return error.InvalidBool;
 
-            return value.*.bool;
+            const token = try scanner.next();
+            dest.* = token == .true;
         },
-        inline .int => {
-            // Signed/Unsigned integer
-            if (value.* != .number or value.*.number == .double)
-                return ParserType.Error.IncorrectType;
+        .int => {
+            // Unsigned/signed integers
+            if (token_type != .number)
+                return error.InvalidInt;
 
-            if (value.*.number.cast(Type)) |number|
-                return number;
-
-            return ParserType.Error.NumberOutOfRange;
+            const token = try scanner.next();
+            dest.* = try parseInt(Type, token.number, 10);
         },
-        inline .float => {
-            // Floating point number
-            if (value.* != .number)
-                return ParserType.Error.IncorrectType;
+        .float => {
+            // Floats
+            if (token_type != .number)
+                return error.InvalidFloat;
 
-            return value.*.number.lossyCast(Type);
+            const token = try scanner.next();
+            dest.* = try parseFloat(Type, token.number);
         },
-        inline .pointer => |info| {
-            if (comptime Type == []const u8) {
+        .pointer => |pointer| {
+            if (Type == []const u8) {
                 // String
-                if (value.* != .string)
-                    return ParserType.Error.IncorrectType;
+                if (token_type != .string)
+                    return error.InvalidString;
 
-                const string_value = try value.*.string.getTemporal();
-                return try allocator.dupe(u8, string_value);
+                const token = try scanner.next();
+                dest.* = try allocator.dupe(u8, token.string);
+            } else {
+                // Array
+                if (token_type != .array_begin)
+                    return error.UnopenedArray;
+                _ = try scanner.next();
+
+                var list = try ArrayList(pointer.child).initCapacity(allocator, ArrayCapacity);
+
+                while (true) {
+                    const array_token_type = try scanner.peekNextTokenType();
+
+                    if (array_token_type == .array_end) {
+                        _ = try scanner.next();
+                        break;
+                    }
+
+                    const element_ptr = try list.addOne(allocator);
+                    try parseLeaky(pointer.child, ArrayCapacity, scanner, element_ptr, allocator);
+                }
+
+                dest.* = try list.toOwnedSlice(allocator);
+            }
+        },
+        .optional => |optional| {
+            // Optional
+            if (token_type == .null) {
+                _ = try scanner.next();
+                dest.* = null;
+                return;
             }
 
-            // Array
-            if (value.* != .array)
-                return ParserType.Error.IncorrectType;
-
-            const array_len = try value.*.array.getSize();
-            var res =
-                std.ArrayList(info.child).initCapacity(allocator.*, array_len) catch
-                    return ParserType.Error.OutOfMemory;
-            var it = value.*.array.iterator();
-
-            while (try it.next()) |elem| {
-                const elem_value = try elem.asAny();
-                res.appendAssumeCapacity(try asAny(
-                    ParserType,
-                    info.child,
-                    &elem_value,
-                    allocator,
-                ));
-            }
-
-            return res.toOwnedSlice(allocator) catch return ParserType.Error.OutOfMemory;
+            try parseLeaky(optional.child, ArrayCapacity, scanner, &(dest.*.?), allocator);
         },
-        inline .optional => |info| {
-            // Default for optionals is null
-            if (value.* == .null)
-                return null;
-
-            return try asAny(ParserType, info.child, value, allocator);
-        },
-        inline .@"enum" => {
+        .@"enum" => {
             // Enum
-            if (value.* != .string)
-                return ParserType.Error.IncorrectType;
+            if (token_type == .string)
+                return error.InvalidEnum;
 
-            const enum_value = try value.*.string.getTemporal();
-            return stringToEnum(Type, enum_value) orelse
-                return ParseError.InvalidValueFormatting;
+            const token = try scanner.next();
+            dest.* = stringToEnum(Type, token.string) orelse
+                return error.InvalidEnumLiteral;
         },
-        inline .@"struct" => |info| {
-            if (comptime Type == Time) {
+        .@"struct" => |@"struct"| {
+            if (Type == Time) {
                 // Time
-                if (value.* != .string)
-                    return ParserType.Error.IncorrectType;
+                if (token_type == .string)
+                    return error.InvalidTime;
 
-                const time_value = try value.*.string.getTemporal();
-                return Time.fromISO8601(time_value) catch
-                    return ParseError.InvalidValueFormatting;
-            }
+                const token = try scanner.next();
+                dest.* = try Time.fromISO8601(token.string);
+            } else {
+                // Struct
+                if (token_type != .object_begin)
+                    return error.UnopenedObject;
+                _ = try scanner.next();
 
-            // Struct
-            if (value.* != .object)
-                return ParserType.Error.IncorrectType;
+                var assigned_fields = [1]bool{false} ** @"struct".fields.len;
 
-            var field_check_array = [1]bool{false} ** info.fields.len;
+                while (true) {
+                    const object_token_type = try scanner.peekNextTokenType();
 
-            var res: Type = undefined;
-            var it = value.*.object.iterator();
+                    if (object_token_type == .object_end) {
+                        _ = try scanner.next();
+                        break;
+                    }
+                    if (object_token_type != .string)
+                        return error.MissingFieldName;
 
-            // Assign fields in json
-            while (try it.next()) |json_field| {
-                const field_name = try json_field.key.get();
-                var field_found = false;
+                    const field_name_token = try scanner.next();
 
-                inline for (info.fields, 0..) |field, index| field_loop: {
-                    if (!eql(u8, field_name, field.name))
+                    inline for (@"struct".fields, 0..) |field, index| field_loop: {
+                        if (!eql(u8, field.name, field_name_token.string))
+                            break :field_loop;
+
+                        const field_ptr = fieldPtr(Type, field.name, dest);
+                        try parseLeaky(field.type, ArrayCapacity, scanner, field_ptr, allocator);
+
+                        assigned_fields[index] = true;
+                    }
+                }
+
+                inline for (@"struct".fields, 0..) |field, index| field_loop: {
+                    if (assigned_fields[index])
                         break :field_loop;
 
-                    field_found = true;
-                    field_check_array[index] = true;
-                    const field_value = try json_field.value.asAny();
+                    if (@typeInfo(field.type) != .optional and field.defaultValue() == null)
+                        return error.MissingField;
 
-                    fieldPtr(
-                        Type,
-                        field.name,
-                        &res,
-                    ).* = try asAny(
-                        ParserType,
-                        field.type,
-                        &field_value,
-                        allocator,
-                    );
+                    const field_ptr = fieldPtr(Type, field.name, dest);
+                    field_ptr.* =
+                        if (comptime @typeInfo(field.type) == .optional)
+                            null
+                        else
+                            field.defaultValue().?;
                 }
-
-                if (!field_found)
-                    return ParserType.Error.MissingField;
             }
-
-            // Check for unassined field and assign defaults to them
-            inline for (info.fields, 0..) |field, index| check_loop: {
-                if (field_check_array[index])
-                    break :check_loop;
-
-                if (comptime field.default_value_ptr == null) {
-                    if (comptime @typeInfo(field.type) == .optional) {
-                        // Default for optionals is null
-                        fieldPtr(Type, field.name, &res).* = null;
-                        break :check_loop;
-                    }
-                    return ParserType.Error.IncompleteObject;
-                }
-
-                fieldPtr(Type, field.name, &res).* = field.defaultValue().?;
-            }
-
-            return res;
         },
-        inline else => unreachable,
+        else => unreachable,
     }
 }

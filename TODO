@@ -16,7 +16,7 @@ units:
 
 json:
 0.0.13:
-    - [] Remove zimdjson dependency, in favor of std
+    - [x] Remove zimdjson dependency, in favor of std
 
 utf8:
     - [x] Do proper checks with utf8 
@@ -39,6 +39,6 @@ routing:
         - [o] Create result structs
         - ResultBody:
             - [x] Create ResultBody
-            - [] Add formating
+            - [o] Add formating
         - ResultHeader:
             - [] Create ResultHeader

@@ -3,12 +3,12 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
+const Scanner = std.json.Scanner;
 
 const isAlphanumeric = std.ascii.isAlphanumeric;
 const isPrint = std.ascii.isPrint;
 const isWhitespace = std.ascii.isWhitespace;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
-const parseFromSliceLeaky = std.json.parseFromSliceLeaky;
 const hasMethod = std.meta.hasMethod;
 const timestamp = std.time.timestamp;
 
@@ -21,6 +21,7 @@ const AuthorizationResult = core.routing.AuthorizationResult;
 const assertValidate = core.utils.assertValidate;
 const isContext = core.context.isContext;
 const validateRequirementChar = core.routing.ResourceOptions.validateRequirementChar;
+const parseLeaky = core.json.parseLeaky;
 
 /// Thrid Party
 const jwt = @import("jwt");
@@ -193,6 +194,7 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
 
         const min_key_len: usize = 32;
         const max_key_len: usize = 64;
+        const json_array_capacity: usize = 16;
 
         pub const claims_set_t = ClaimsSetType;
 
@@ -251,13 +253,19 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     .{ .key = self.key },
                 ) catch return .unauthorized;
 
-            claims_set_dest.* =
-                parseFromSliceLeaky(
-                    ClaimsSetType,
-                    allocator,
-                    message,
-                    .{ .allocate = .alloc_always },
-                ) catch return .unauthorized;
+            var scanner = Scanner.initCompleteInput(allocator, message);
+            defer scanner.deinit();
+            parseLeaky(
+                ClaimsSetType,
+                json_array_capacity,
+                &scanner,
+                claims_set_dest,
+                allocator,
+            ) catch return .unauthorized;
+            const end_of_document_token = scanner.next() catch
+                return .unauthorized;
+            if (end_of_document_token != .end_of_document)
+                return .unauthorized;
 
             claims_set_dest.validate() catch
                 return .unauthorized;
