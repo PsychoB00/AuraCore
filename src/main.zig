@@ -35,6 +35,7 @@ const StatusCode = zap.http.StatusCode;
 
 const zeit = @import("zeit");
 const Time = zeit.Time;
+const Instant = zeit.Instant;
 
 /// Test specs
 /// Logging
@@ -69,6 +70,19 @@ const Context = struct {
     }
 };
 
+const Color = enum {
+    red,
+    green,
+    blue,
+};
+
+const Item = struct {
+    id: u64,
+    name: []const u8,
+    color: Color = .blue,
+    date: ?Time,
+};
+
 /// App
 const ResourceTree = struct {
     pub const pages = struct {
@@ -84,16 +98,18 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    result_body: *ResultBody([]const u8, CommonMediaTypes.text),
+                    result_body: *ResultBody(Item, CommonMediaTypes.json),
                 ) !StatusCode {
-                    result_body.* = .{
-                        .data = "Hello world!",
-                    };
+                    result_body.* = .{ .data = .{
+                        .id = 123,
+                        .name = "Awesome shit",
+                        .date = null,
+                    } };
                     return .ok;
                 }
             },
             .{
-                .authorize = &.{"test"},
+                .authorize = null,
             },
         );
     };

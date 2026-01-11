@@ -16,6 +16,7 @@ const core = @import("../core.zig");
 const ResourceOptions = core.routing.ResourceOptions;
 
 const fieldPtr = core.utils.fieldPtr;
+const assertValidate = core.utils.assertValidate;
 const isStaticResource = core.routing.isStaticResource;
 const isAPIResource = core.routing.isAPIResource;
 const isResourceParameters = core.routing.isResourceParameters;
@@ -313,16 +314,14 @@ pub fn StaticRoute(
             if (comptime MethodType == .GET) {
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
                 const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileError")))
-                        processor.readFileError(.internal_server_error, err);
-                    request.setStatus(.internal_server_error);
-                    return;
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash")))
+                        processor.readFileCrash(err);
+                    unreachable;
                 };
                 if (body.len >= body_buffer.len) {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileError")))
-                        processor.readFileError(.internal_server_error, error.FileToBig);
-                    request.setStatus(.internal_server_error);
-                    return;
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash")))
+                        processor.readFileCrash(error.FileToBig);
+                    unreachable;
                 }
 
                 _setStaticResourceHeaders(body.len, request) catch |err| {
@@ -333,10 +332,9 @@ pub fn StaticRoute(
                 };
 
                 request.sendBody(body) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                        processor.sendBodyError(.internal_server_error, err);
-                    request.setStatus(.internal_server_error);
-                    return;
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyCrash")))
+                        processor.sendBodyCrash(err);
+                    unreachable;
                 };
             } else if (comptime MethodType == .HEAD) {
                 _setStaticResourceHeaders(0, request) catch |err| {
@@ -576,11 +574,17 @@ pub fn StaticRoute(
                             &resource_result,
                         );
 
-                        request.sendBody(result_ptr.data) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                                processor.sendBodyError(.internal_server_error, err);
-                            request.setStatus(.internal_server_error);
-                            return;
+                        var buffer: []u8 = undefined;
+                        result_ptr.format(&buffer, allocator) catch |err| {
+                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
+                                processor.formatResultCrash(.body, err);
+                            unreachable;
+                        };
+
+                        request.sendBody(buffer) catch |err| {
+                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyCrash")))
+                                processor.sendBodyCrash(err);
+                            unreachable;
                         };
                     },
                 }

@@ -19,6 +19,10 @@ const trimStart = std.mem.trimStart;
 /// Aura
 const core = @import("../../core.zig");
 
+const JsonInterpreter = core.json.DefaultJsonInterpreter;
+
+const validateJsonType = JsonInterpreter.validateType;
+
 pub const Host = @import("Host.zig").Host;
 pub const UserAgent = @import("UserAgent.zig").UserAgent;
 
@@ -26,9 +30,6 @@ pub const ContentLength = @import("ContentLength.zig").ContentLength;
 pub const ContentType = @import("ContentType.zig").ContentType;
 
 pub const Authorization = @import("Authorization.zig").Authorization;
-
-const validateJsonType = core.json.validateJsonType;
-const validateJsonValue = core.json.validateValue;
 
 pub const HttpHeaderType = enum {
     request,
@@ -77,12 +78,6 @@ pub const MediaType = union(MediaTypeTag) {
         pub fn validateType(comptime Self: ApplicationSubtype, comptime Type: type) !void {
             switch (Self) {
                 .json, .wildcard => try validateJsonType(Type),
-            }
-        }
-
-        pub fn validateValue(comptime Self: ApplicationSubtype, comptime Type: type, value: *const Type) !void {
-            switch (Self) {
-                .json, .wildcard => try validateJsonValue(Type, value),
             }
         }
 

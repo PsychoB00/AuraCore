@@ -3,7 +3,6 @@ const std = @import("std");
 
 const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
-const Scanner = std.json.Scanner;
 
 const isAlphanumeric = std.ascii.isAlphanumeric;
 const isPrint = std.ascii.isPrint;
@@ -17,11 +16,12 @@ const core = @import("core.zig");
 
 const Authorization = core.net.headers.Authorization;
 const AuthorizationResult = core.routing.AuthorizationResult;
+const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
 const assertValidate = core.utils.assertValidate;
 const isContext = core.context.isContext;
 const validateRequirementChar = core.routing.ResourceOptions.validateRequirementChar;
-const parseLeaky = core.json.parseLeaky;
+const parseLeaky = JsonInterpreter.parseLeaky;
 
 /// Thrid Party
 const jwt = @import("jwt");
@@ -194,7 +194,6 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
 
         const min_key_len: usize = 32;
         const max_key_len: usize = 64;
-        const json_array_capacity: usize = 16;
 
         pub const claims_set_t = ClaimsSetType;
 
@@ -253,18 +252,7 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     .{ .key = self.key },
                 ) catch return .unauthorized;
 
-            var scanner = Scanner.initCompleteInput(allocator, message);
-            defer scanner.deinit();
-            parseLeaky(
-                ClaimsSetType,
-                json_array_capacity,
-                &scanner,
-                claims_set_dest,
-                allocator,
-            ) catch return .unauthorized;
-            const end_of_document_token = scanner.next() catch
-                return .unauthorized;
-            if (end_of_document_token != .end_of_document)
+            parseLeaky(ClaimsSetType, &message, claims_set_dest, allocator) catch
                 return .unauthorized;
 
             claims_set_dest.validate() catch

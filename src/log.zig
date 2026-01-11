@@ -7,6 +7,7 @@ const Futex = std.Thread.Futex;
 const Writer = std.Io.Writer;
 const Reader = std.Io.Reader;
 const SourceLocation = std.builtin.SourceLocation;
+const TTYConfig = std.Io.tty.Config;
 
 const assert = std.debug.assert;
 const hasMethod = std.meta.hasMethod;
@@ -37,6 +38,7 @@ pub const State = enum(u8) {
 pub const Level = enum {
     debug,
     info,
+    success,
     warn,
     err,
     fatal,
@@ -654,12 +656,26 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
 
             const placeholder = comptime try reader.take(2);
 
+            const tty_config: TTYConfig = .escape_codes;
+            switch (arg.*.level.?) {
+                .info, .debug => try tty_config.setColor(writer, .bright_blue),
+                .success => try tty_config.setColor(writer, .bright_green),
+                .warn => try tty_config.setColor(writer, .bright_yellow),
+                .err => try tty_config.setColor(writer, .bright_red),
+                .fatal => {
+                    try tty_config.setColor(writer, .red);
+                    try tty_config.setColor(writer, .dim);
+                },
+            }
+
             switch (placeholder[1]) {
                 inline 'l' => try writer.writeAll(@tagName(arg.*.level.?)),
                 inline 'L' => {
+                    try tty_config.setColor(writer, .bold);
                     switch (arg.*.level.?) {
                         .debug => try writer.writeAll("DEBUG"),
                         .info => try writer.writeAll("INFO"),
+                        .success => try writer.writeAll("SUCCESS"),
                         .warn => try writer.writeAll("WARN"),
                         .err => try writer.writeAll("ERROR"),
                         .fatal => try writer.writeAll("FATAL"),
@@ -667,6 +683,8 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
                 },
                 inline else => unreachable,
             }
+
+            try tty_config.setColor(writer, .reset);
 
             const level_postfix = comptime try reader.take(reader.bufferedLen());
             if (comptime level_postfix.len > 0)

@@ -73,6 +73,13 @@ pub fn isResourceParameters(comptime Type: type) bool {
 pub const ResultType = enum {
     header,
     body,
+
+    pub fn toString(comptime Type: ResultType) []const u8 {
+        switch (Type) {
+            .header => return "Header",
+            .body => return "Body",
+        }
+    }
 };
 
 /// Trait check for ResourceResult

@@ -13,6 +13,7 @@ const core = @import("../core.zig");
 const ParametersType = core.routing.ParametersType;
 const MediaType = core.net.headers.MediaType;
 const ApplicationSubtype = MediaType.ApplicationSubtype;
+const JsonInterpreter = core.json.DefaultJsonInterpreter;
 const TextSubtype = MediaType.TextSubtype;
 const Charset = TextSubtype.Charset;
 
@@ -20,7 +21,7 @@ const ContentLength = core.net.headers.ContentLength;
 const ContentType = core.net.headers.ContentType;
 
 const isResourceParameters = core.routing.isResourceParameters;
-const parseLeaky = core.json.parseLeaky;
+const parseLeaky = JsonInterpreter.parseLeaky;
 
 /// Third Party
 const zap = @import("zap");
@@ -87,8 +88,6 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
     }
 
     return struct {
-        const json_array_capacity: usize = 8;
-
         const BodyParametersType = @This();
         pub const parameters_type: ParametersType = .body;
         pub const structure = Structure;
@@ -131,17 +130,8 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
                         return error.RuntimeUnreachable;
 
                     switch (application) {
-                        .json, .wildcard => {
-                            var scanner = Scanner.initCompleteInput(allocator, request.body.?);
-                            defer scanner.deinit();
-                            try parseLeaky(Structure, BodyParametersType.json_array_capacity, &scanner, &dest.data, allocator);
-                            const end_of_document_token = try scanner.next();
-                            if (end_of_document_token != .end_of_document)
-                                return error.UnclosedDocument;
-                        },
+                        .json, .wildcard => try parseLeaky(Structure, &(request.body.?), &dest.data, allocator),
                     }
-
-                    try ApplicationSubtype.validateValue(.wildcard, Structure, &dest.data);
                 },
                 .text => |text| {
                     (comptime TextSubtype.validateType(.wildcard, structure_type)) catch

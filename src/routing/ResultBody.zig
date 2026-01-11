@@ -1,10 +1,10 @@
 /// STD
 const std = @import("std");
 
-const Writer = std.Io.Writer;
-const WriterError = Writer.Error;
+const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;
+const comptimePrint = std.fmt.comptimePrint;
 const isAscii = std.ascii.isAscii;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 
@@ -15,18 +15,18 @@ const ResultType = core.routing.ResultType;
 const MediaType = core.net.headers.MediaType;
 const TextSubtype = MediaType.TextSubtype;
 const Charset = TextSubtype.Charset;
+const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
-const assertValidate = core.utils.assertValidate;
 const isResourceResult = core.routing.isResourceResult;
+const formatLeaky = JsonInterpreter.formatLeaky;
 
 /// Result for larger and more complex data
 ///
 /// - `Structure` is a type representing content of the body, can be optional type.
-/// - `ResultMediaType` is either a MediaType which specify strict parsing or null
-///   in which case the parsing is derived from Accept header
-/// - `ResultMediaType` with value, mustn't be a wildcard
-/// - `Structure` must be valid parsing type for MediaType in `ResultMediaType' if it has a value
-pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType) type {
+/// - `ResultMediaType` is a MediaType which specify parsing
+/// - `ResultMediaType` mustn't be a wildcard
+/// - `Structure` must be valid parsing type for MediaType in `ResultMediaType'
+pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType) type {
     const is_structure_optional = @typeInfo(Structure) == .optional;
     const structure_type =
         if (is_structure_optional)
@@ -35,14 +35,13 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType
             Structure;
 
     // `Structure` correctness assertion
-    if (ResultMediaType) |StrictResultMediaType|
-        StrictResultMediaType.validateType(structure_type) catch
-            @compileError("`Structure` is not a valid type for `ResultMediaType`");
+    ResultMediaType.validateType(structure_type) catch |err|
+        @compileError(comptimePrint(
+            "`Structure` is not a valid type for `ResultMediaType`, cause {s}",
+            .{@errorName(err)},
+        ));
 
-    if (ResultMediaType == null)
-        @compileError("UNSUPPORTED");
-
-    if (ResultMediaType.?.isWildcard())
+    if (ResultMediaType.isWildcard())
         @compileError("`ResultMediaType` mustn't be a wildcard");
 
     return struct {
@@ -53,15 +52,15 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType
 
         data: Structure,
 
-        pub fn format(self: ResultBodyType, writer: *Writer) WriterError!void {
+        pub fn format(self: *const ResultBodyType, dest: *[]u8, allocator: Allocator) !void {
             if (comptime is_structure_optional)
                 if (self.data == null)
                     return;
 
-            switch (ResultMediaType.?) {
+            switch (ResultMediaType) {
                 inline .application => |application| {
                     switch (application) {
-                        inline .json => {},
+                        inline .json => try formatLeaky(Structure, &self.data, dest, allocator),
                         inline .wildcard => unreachable,
                     }
                 },
@@ -80,9 +79,9 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType
                         else
                             self.data;
 
-                    assertValidate(TextSubtype.validateText(text_data, charset));
+                    try TextSubtype.validateText(text_data, charset);
 
-                    try writer.writeAll(text_data);
+                    dest.* = try allocator.dupe(u8, text_data);
                 },
                 inline .wildcard => unreachable,
             }
@@ -95,7 +94,7 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: ?MediaType
 /// - `Type` must fullfil the isResourceResult trait check
 /// - Declaration `result_type` from ResourceResult must have value ResultType.body
 /// - `Type` must have decleration of resulting media type, named "result_media_type"
-///     - `result_media_type` must be declaretion of ?MediaType
+///     - `result_media_type` must be declaretion of MediaType
 /// - `Type` must be able to generate `Type` using its declarations and function ResultBody
 pub fn isResultBody(comptime Type: type) bool {
     if (!isResourceResult(Type))
@@ -106,7 +105,7 @@ pub fn isResultBody(comptime Type: type) bool {
 
     const has_result_media_type =
         @hasDecl(Type, "result_media_type") and
-        @TypeOf(Type.result_media_type) == ?MediaType;
+        @TypeOf(Type.result_media_type) == MediaType;
 
     const can_generate_self =
         is_body_result_type and has_result_media_type and

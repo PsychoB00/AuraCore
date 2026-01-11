@@ -14,12 +14,6 @@ testing:
 units:
     - [] Create units
 
-json:
-0.0.13:
-    - [x] Remove zimdjson dependency, in favor of std
-
-utf8:
-    - [x] Do proper checks with utf8 
 
 net:
     - headers:
@@ -28,17 +22,17 @@ net:
         - [] Add Accept
 
 log:
-    - [] Move LoggingOnRequestProcessor to log 
+    - [] Move LoggingOnRequestProcessor to log
+    - [] Change IsOnRequestProcessor to cover everyone of it's methods
+    - [x] Add color to log level
 
 routing:
     - StaticRoute:
-        - [x] Fix status codes for bad Authorization
-        - [x] Clean up the code duplicates
-        - [] Implement ResultBody
+        - [x] Implement ResultBody
+        - [x] Better error handeling 
     - Result:
         - [o] Create result structs
         - ResultBody:
-            - [x] Create ResultBody
-            - [o] Add formating
+            - [x] Add formating
         - ResultHeader:
             - [] Create ResultHeader

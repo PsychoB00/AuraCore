@@ -13,6 +13,7 @@ const bufPrint = std.fmt.bufPrint;
 const core = @import("../core.zig");
 
 const ParametersType = core.routing.ParametersType;
+const ResultType = core.routing.ResultType;
 
 const hasLogger = core.context.hasLogger;
 const getLogger = core.context.getLogger;
@@ -86,7 +87,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
             );
 
             var log = self.logger
-                .log(.err)
+                .log(.warn)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
@@ -102,7 +103,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
             );
 
             self.logger
-                .log(.err)
+                .log(.warn)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
                 .print("Request for invalid method, responded with " ++ status_string)
@@ -116,13 +117,13 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
             );
 
             var log = self.logger
-                .log(.err)
+                .log(.warn)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            _ = log.printTryFmt("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
-                log.print("Request with invalid " ++ ParametersType.toString(Type) ++ "Parameters, responded with " ++ status_string);
+            _ = log.printTryFmt("Request with invalid " ++ Type.toString() ++ "Parameters, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Request with invalid " ++ Type.toString() ++ "Parameters, responded with " ++ status_string);
         }
 
         pub fn invalidAuthorization(self: *OnRequestProcessorType, comptime Status: StatusCode) void {
@@ -132,59 +133,11 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
             );
 
             self.logger
-                .log(.err)
+                .log(.warn)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
                 .print("Request with invalid authorization, responded with " ++ status_string)
                 .commit();
-        }
-
-        pub fn setHeadersError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
-            const status_string = comptime comptimePrint(
-                "{} {s}",
-                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
-            );
-
-            var log = self.logger
-                .log(.err)
-                .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
-
-            _ = log.printTryFmt("Failed to set headers, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
-                log.print("Failed to set headers, responded with " ++ status_string);
-        }
-
-        pub fn sendBodyError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
-            const status_string = comptime comptimePrint(
-                "{} {s}",
-                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
-            );
-
-            var log = self.logger
-                .log(.err)
-                .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
-
-            _ = log.printTryFmt("Failed to send body, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
-                log.print("Failed to send body, responded with " ++ status_string);
-        }
-
-        pub fn readFileError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
-            const status_string = comptime comptimePrint(
-                "{} {s}",
-                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
-            );
-
-            var log = self.logger
-                .log(.err)
-                .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
-
-            _ = log.printTryFmt("Failed to read file, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
-                log.print("Failed to read file, responded with " ++ status_string);
         }
 
         pub fn controllerError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
@@ -203,6 +156,55 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 log.print("Failed to handle request, responded with " ++ status_string);
         }
 
+        pub fn setHeadersError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
+            var log = self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Failed to set headers, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to set headers, responded with " ++ status_string);
+        }
+
+        pub fn formatResultCrash(self: *OnRequestProcessorType, comptime Type: ResultType, err: anyerror) void {
+            var log = self.logger
+                .log(.fatal)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Server crashed when trying to format " ++ Type.toString() ++ "Result, caused by {s}", .{@errorName(err)}) catch
+                log.print("Server crashed when trying to format " ++ Type.toString() ++ "Result");
+        }
+
+        pub fn sendBodyCrash(self: *OnRequestProcessorType, err: anyerror) void {
+            var log = self.logger
+                .log(.fatal)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Server crashed when trying to send body, caused by {s}", .{@errorName(err)}) catch
+                log.print("Server crashed when trying to send body");
+        }
+
+        pub fn readFileCrash(self: *OnRequestProcessorType, err: anyerror) void {
+            var log = self.logger
+                .log(.fatal)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Server crashed when trying to read file, caused by {s}", .{@errorName(err)}) catch
+                log.print("Server crashed when trying to read file");
+        }
+
         pub fn success(self: *OnRequestProcessorType, comptime Status: StatusCode) void {
             comptime if (@intFromEnum(Status) < 200 or @intFromEnum(Status) >= 300)
                 @compileError("`Status` must be success code");
@@ -210,7 +212,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
             const elapsed_time: u64 = self.timer.lap() / 1_000_000;
 
             var log = self.logger
-                .log(.info)
+                .log(.success)
                 .time()
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
