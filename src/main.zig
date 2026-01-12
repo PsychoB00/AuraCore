@@ -98,8 +98,11 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
+                    allocator: Allocator,
                     result_body: *ResultBody(Item, CommonMediaTypes.json),
                 ) !StatusCode {
+                    _ = try std.json.parseFromSliceLeaky(Item, allocator, "{\"id\":123,\"name\":\"Hello\"}", .{});
+
                     result_body.* = .{ .data = .{
                         .id = 123,
                         .name = "Awesome shit",

@@ -4,10 +4,15 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 const Timer = std.time.Timer;
+const StackTrace = std.builtin.StackTrace;
 
 const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
 const bufPrint = std.fmt.bufPrint;
+
+const buildin = @import("builtin");
+
+const IsDebug = buildin.mode == .Debug;
 
 /// Aura
 const core = @import("../core.zig");
@@ -140,7 +145,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 .commit();
         }
 
-        pub fn controllerError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+        pub fn controllerError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror, trace: if (IsDebug) StackTrace else void) void {
             const status_string = comptime comptimePrint(
                 "{} {s}",
                 .{ @intFromEnum(Status), statusCodeToUpper(Status) },
@@ -154,9 +159,12 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
 
             _ = log.printTryFmt("Failed to handle request, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
                 log.print("Failed to handle request, responded with " ++ status_string);
+
+            if (comptime IsDebug)
+                _ = log.trace(trace);
         }
 
-        pub fn setHeadersError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror) void {
+        pub fn setHeadersError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror, trace: if (IsDebug) StackTrace else void) void {
             const status_string = comptime comptimePrint(
                 "{} {s}",
                 .{ @intFromEnum(Status), statusCodeToUpper(Status) },
@@ -170,6 +178,28 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
 
             _ = log.printTryFmt("Failed to set headers, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
                 log.print("Failed to set headers, responded with " ++ status_string);
+
+            if (comptime IsDebug)
+                _ = log.trace(trace);
+        }
+
+        pub fn sendBodyError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror, trace: if (IsDebug) StackTrace else void) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
+            var log = self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Failed to send body, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to send body, responded with " ++ status_string);
+
+            if (comptime IsDebug)
+                _ = log.trace(trace);
         }
 
         pub fn formatResultCrash(self: *OnRequestProcessorType, comptime Type: ResultType, err: anyerror) void {
@@ -181,17 +211,6 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
 
             _ = log.printTryFmt("Server crashed when trying to format " ++ Type.toString() ++ "Result, caused by {s}", .{@errorName(err)}) catch
                 log.print("Server crashed when trying to format " ++ Type.toString() ++ "Result");
-        }
-
-        pub fn sendBodyCrash(self: *OnRequestProcessorType, err: anyerror) void {
-            var log = self.logger
-                .log(.fatal)
-                .time()
-                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
-            defer log.commit();
-
-            _ = log.printTryFmt("Server crashed when trying to send body, caused by {s}", .{@errorName(err)}) catch
-                log.print("Server crashed when trying to send body");
         }
 
         pub fn readFileCrash(self: *OnRequestProcessorType, err: anyerror) void {

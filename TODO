@@ -14,7 +14,6 @@ testing:
 units:
     - [] Create units
 
-
 net:
     - headers:
         - [] Add Date
@@ -25,6 +24,7 @@ log:
     - [] Move LoggingOnRequestProcessor to log
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
     - [x] Add color to log level
+    - [x] Add stack trace to Log
 
 routing:
     - StaticRoute:
@@ -34,5 +34,6 @@ routing:
         - [o] Create result structs
         - ResultBody:
             - [x] Add formating
+            - [] Add ResultHeader checking
         - ResultHeader:
             - [] Create ResultHeader

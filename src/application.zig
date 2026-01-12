@@ -37,7 +37,7 @@ pub fn Application(comptime Options: ApplicationOptions, comptime RouterType: ty
             if (comptime AuthorizationProcessorType != null)
                 try self.authorization_processor.init(&self.context, allocator);
 
-            try ZapAppType.init(allocator, &self.context, .{});
+            try ZapAppType.init(allocator, &self.context, .{ .default_error_strategy = .raise });
 
             if (comptime AuthorizationProcessorType == null)
                 try self.router.init()

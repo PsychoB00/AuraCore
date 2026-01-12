@@ -10,6 +10,10 @@ const eql = std.mem.eql;
 const cwd = std.fs.cwd;
 const bufPrint = std.fmt.bufPrint;
 
+const buildin = @import("builtin");
+
+const IsDebug = buildin.mode == .Debug;
+
 /// Aura
 const core = @import("../core.zig");
 
@@ -92,14 +96,17 @@ fn ResourceParameters(comptime MethodParametersType: type) type {
     var resource_parameters_count: usize = 0;
 
     for (method_parameters_info.@"struct".fields) |field| {
-        if (isResourceParameters(@typeInfo(field.type).pointer.child))
+        if (@typeInfo(field.type) == .pointer and isResourceParameters(@typeInfo(field.type).pointer.child))
             resource_parameters_count += 1;
     }
 
     var buffer: [resource_parameters_count]StructField = undefined;
     var assign_index: usize = 0;
 
-    for (0..method_parameters_info.@"struct".fields.len) |index| {
+    for (0..method_parameters_info.@"struct".fields.len) |index| field_loop: {
+        if (@typeInfo(method_parameters_info.@"struct".fields[index].type) != .pointer)
+            break :field_loop;
+
         const resource_parameter_type = @typeInfo(method_parameters_info.@"struct".fields[index].type).pointer.child;
         if (!isResourceParameters(resource_parameter_type))
             continue;
@@ -132,14 +139,17 @@ fn ResourceResult(comptime MethodParametersType: type) type {
     var resource_result_count: usize = 0;
 
     for (method_parameters_info.@"struct".fields) |field| {
-        if (isResourceResult(@typeInfo(field.type).pointer.child))
+        if (@typeInfo(field.type) == .pointer and isResourceResult(@typeInfo(field.type).pointer.child))
             resource_result_count += 1;
     }
 
     var buffer: [resource_result_count]StructField = undefined;
     var assign_index: usize = 0;
 
-    for (0..method_parameters_info.@"struct".fields.len) |index| {
+    for (0..method_parameters_info.@"struct".fields.len) |index| field_loop: {
+        if (@typeInfo(method_parameters_info.@"struct".fields[index].type) != .pointer)
+            break :field_loop;
+
         const resource_result_type = @typeInfo(method_parameters_info.@"struct".fields[index].type).pointer.child;
         if (!isResourceResult(resource_result_type))
             continue;
@@ -326,20 +336,21 @@ pub fn StaticRoute(
 
                 _setStaticResourceHeaders(body.len, request) catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
-                        processor.setHeadersError(.internal_server_error, err);
+                        processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
 
                 request.sendBody(body) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyCrash")))
-                        processor.sendBodyCrash(err);
-                    unreachable;
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
+                        processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                    request.setStatus(.internal_server_error);
+                    return;
                 };
             } else if (comptime MethodType == .HEAD) {
                 _setStaticResourceHeaders(0, request) catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
-                        processor.setHeadersError(.internal_server_error, err);
+                        processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
@@ -540,7 +551,7 @@ pub fn StaticRoute(
 
             // Call method
             const call_result = @call(
-                .always_inline,
+                .never_inline,
                 method_fn,
                 _buildMethodParameters(
                     MethodParameters(method_type),
@@ -557,7 +568,7 @@ pub fn StaticRoute(
             if (comptime @typeInfo(@TypeOf(call_result)) == .error_union) {
                 status = call_result catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "controllerError")))
-                        processor.controllerError(.internal_server_error, err);
+                        processor.controllerError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
@@ -582,9 +593,10 @@ pub fn StaticRoute(
                         };
 
                         request.sendBody(buffer) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyCrash")))
-                                processor.sendBodyCrash(err);
-                            unreachable;
+                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
+                                processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                            request.setStatus(.internal_server_error);
+                            return;
                         };
                     },
                 }
@@ -608,7 +620,11 @@ pub fn StaticRoute(
             var res: ParametersType = undefined;
 
             inline for (parameters_info.@"struct".fields) |field| {
-                const field_type = @typeInfo(field.type).pointer.child;
+                const field_type =
+                    if (comptime @typeInfo(field.type) == .pointer)
+                        @typeInfo(field.type).pointer.child
+                    else
+                        field.type;
 
                 if (comptime field_type == Allocator) {
                     fieldPtr(ParametersType, field.name, &res).* = allocator;

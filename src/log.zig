@@ -7,6 +7,7 @@ const Futex = std.Thread.Futex;
 const Writer = std.Io.Writer;
 const Reader = std.Io.Reader;
 const SourceLocation = std.builtin.SourceLocation;
+const StackTrace = std.builtin.StackTrace;
 const TTYConfig = std.Io.tty.Config;
 
 const assert = std.debug.assert;
@@ -16,6 +17,10 @@ const copyForwards = std.mem.copyForwards;
 const bufPrint = std.fmt.bufPrint;
 const isLower = std.ascii.isLower;
 const toUpper = std.ascii.toUpper;
+
+const buildin = @import("builtin");
+
+const IsDebug = buildin.mode == .Debug;
 
 /// Aura
 const core = @import("core.zig");
@@ -51,9 +56,11 @@ pub const LoggerOptions = struct {
 
 pub const LogOptions = struct {
     /// When formated, how many bytes can Log scope string be?
-    scope_len: usize = 64,
+    scope_len: usize = 128,
     /// When formated, how many bytes can Log message string be?
-    message_len: usize = 1_024,
+    message_len: usize = 2_048,
+    /// When formated, how many bytes can Log stack_trace string be?
+    stack_trace_len: usize = 4_096,
 };
 
 pub const LogFmtOptions = struct {
@@ -65,7 +72,8 @@ pub const LogFmtOptions = struct {
     /// - '%c' and '%C' is `scope`, empty argument is "<NO_SCOPE>"
     /// - '%m' and '%M' is `message`, empty argument is "<NO_MESSAGE>"
     /// - '%s' and '%S' is `source_location`, empty argument is "<NO_SOURCE>"
-    fmt: []const u8 = "%L%t%c%m%s\n",
+    /// - '%e' and '%E' is `stack_trace`, empty argument is "<NO_TRACE>"
+    fmt: []const u8 = "%L%t%c%m%s%e\n",
     /// If formated, what format should the `level` be in?
     /// - '%l' is `level` in lower case, like "debug"
     /// - '%L' is `level` in upper case, like "DEBUG"
@@ -86,14 +94,21 @@ pub const LogFmtOptions = struct {
     /// - '%l' is `line`
     /// - '%c' is `column`
     source_location_fmt: []const u8 = " in file '%F' line %l",
+    /// If formated, what format should the `stack_trace` be in?
+    /// - '%e' is `stack_trace`
+    stack_trace_fmt: []const u8 =
+        "\n========================================> STACK TRACE <========================================" ++
+        "%e" ++
+        "===============================================================================================",
 
-    pub fn isValid(self: LogFmtOptions) !void {
-        try _hasFmtValidPlaceholdersCaseExclusive("ltcms", self.fmt);
+    pub fn validate(self: LogFmtOptions) !void {
+        try _hasFmtValidPlaceholdersCaseExclusive("ltcmsde", self.fmt);
         try _hasFmtValidPlaceholdersCaseExclusive("l", self.level_fmt);
         try _hasFmtValidPlaceholders("aAbBcCdDeFfGgHhIjklMmmOPpRrSsTtUuVWwXxYyZz%", self.scope_fmt);
         try _hasFmtValidPlaceholders("s", self.scope_fmt);
         try _hasFmtValidPlaceholders("m", self.message_fmt);
         try _hasFmtValidPlaceholders("mFflc", self.source_location_fmt);
+        try _hasFmtValidPlaceholders("e", self.stack_trace_fmt);
     }
 
     /// Checks if `fmt` has at least one placeholder defined in `valid_placeholders` and placeholders aren't duplicit
@@ -267,6 +282,7 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
 
             // Waking spawning thread waiting for collecting thread initialization
             self.uncollected.store(0, .release);
+            Futex.wake(&self.uncollected, 1);
 
             // Collecting loop
             while (self.thread_running.load(.acquire) or self.uncollected.load(.acquire) != 0) {
@@ -292,6 +308,10 @@ pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime 
                         log_request.message = null;
                         log_request.message_len = null;
                         log_request.source_location = null;
+                        if (comptime IsDebug) {
+                            log_request.stack_trace = null;
+                            log_request.stack_trace_len = null;
+                        }
 
                         log_request.state.store(.empty, .release);
                         _ = self.uncollected.fetchSub(1, .release);
@@ -410,11 +430,11 @@ pub fn isLogger(comptime Type: type) bool {
 
 /// Statically sized Log
 ///
-/// - Log allows construction chaining (except of `printTryFmt` and `scopeTryFmt`).
+/// - Log allows construction chaining (except of `printTryFmt`, `scopeTryFmt` and `traceTry`).
 /// - Must call `commit` to set Log for collecting or `rollback` to set Log for reserving.
-/// - Exceeding `Options.message_len` or `Options.scope_len` by length of string formated in `printFmt` and `scopeFmt`, respective,
+/// - Exceeding `Options.message_len` or `Options.scope_len` by length of string formated in `printFmt`, `scopeFmt` and `trace`, respective,
 ///   will cause panic. Therefore, if you are unsure about lenght of formated string use try versions of the functions and
-///   `catch` the result. If error is caught when calling respective dunctions, the Log on which it was called on IS STILL RESERVED
+///   `catch` the result. If error is caught when calling respective functions, the Log on which it was called on IS STILL RESERVED
 ///   in `log_pool` make sure it's properly commited or rolled-back.
 /// - Log can be used by any Logger type which has opaque methode `_incrUncollected`.
 pub fn Log(comptime Options: LogOptions) type {
@@ -433,6 +453,8 @@ pub fn Log(comptime Options: LogOptions) type {
         message: ?[Options.message_len]u8,
         message_len: ?usize,
         source_location: ?SourceLocation,
+        stack_trace: if (IsDebug) ?[Options.stack_trace_len]u8 else void,
+        stack_trace_len: if (IsDebug) ?usize else void,
 
         /// Initialize Log
         pub fn init(logger: anytype) LogType {
@@ -455,6 +477,8 @@ pub fn Log(comptime Options: LogOptions) type {
                 .message = null,
                 .message_len = null,
                 .source_location = null,
+                .stack_trace = if (comptime IsDebug) null else {},
+                .stack_trace_len = if (comptime IsDebug) null else {},
             };
         }
 
@@ -586,6 +610,34 @@ pub fn Log(comptime Options: LogOptions) type {
             return self;
         }
 
+        /// Formats a stack trace and sets it
+        ///
+        /// If formated stack trace length is over `Options.stack_trace_len`, function will cause panic.
+        pub fn trace(self: *LogType, stack_trace: StackTrace) *LogType {
+            if (!IsDebug)
+                @compileError("`stack_trace` mustn't be set outside of debug");
+
+            self.stack_trace = undefined;
+            const slice = bufPrint(&self.stack_trace.?, "{f}", .{stack_trace}) catch
+                @panic("Length of formated string exceeded `Options.stack_trace_len`");
+            self.stack_trace_len = slice.len;
+            return self;
+        }
+
+        /// Formats a stack trace and sets it
+        ///
+        /// If formated stack trace length is over `Options.stack_trace_len`, function will return BufPrintError.
+        /// If this function returns an error, the Log is still reserved.
+        pub fn traceTry(self: *LogType, stack_trace: StackTrace) !*LogType {
+            if (!IsDebug)
+                @compileError("`stack_trace` mustn't be set outside of debug");
+
+            self.stack_trace = undefined;
+            const slice = try bufPrint(&self.stack_trace.?, "{f}", .{stack_trace});
+            self.stack_trace_len = slice.len;
+            return self;
+        }
+
         /// Commits Log for collection
         pub fn commit(self: *LogType) void {
             self.state.store(.constructed, .release);
@@ -601,6 +653,7 @@ pub fn Log(comptime Options: LogOptions) type {
             self.message = null;
             self.message_len = null;
             self.source_location = null;
+            self.stack_trace = null;
             self.state.store(.empty, .release);
         }
     };
@@ -641,7 +694,8 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
         @compileError("`LogType` must be Log");
 
     // `Options` validation
-    Options.isValid() catch @compileError("`Options` must be valid");
+    Options.validate() catch
+        @compileError("`Options` must be valid");
 
     return struct {
         /// Writes `Log.level` to `writer` based on `Options.level_fmt`
@@ -766,6 +820,29 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
             }
         }
 
+        /// Writes `Log.stack_trace` to `writer` based on `Options.stack_trace_fmt`
+        pub fn stackTraceFmt(arg: *const LogType, writer: *Writer) !void {
+            if (!IsDebug)
+                @compileError("`stack_trace` mustn't be set outside of debug");
+
+            assert(arg.*.stack_trace != null);
+            assert(arg.*.stack_trace_len != null);
+
+            comptime var reader = Reader.fixed(Options.stack_trace_fmt);
+
+            const stack_trace_prefix = comptime try reader.takeDelimiterExclusive('%');
+            if (comptime stack_trace_prefix.len > 0)
+                try writer.writeAll(stack_trace_prefix);
+
+            _ = comptime try reader.take(2);
+
+            try writer.writeAll(arg.*.stack_trace.?[0..arg.*.stack_trace_len.?]);
+
+            const stack_trace_postfix = comptime try reader.take(reader.bufferedLen());
+            if (comptime stack_trace_postfix.len > 0)
+                try writer.writeAll(stack_trace_postfix);
+        }
+
         /// Writes formated Log to `writer` based on `Options.fmt`
         pub fn fmt(arg: *const LogType, writer: *Writer, timezone: *const TimeZone) !void {
             comptime var reader = Reader.fixed(Options.fmt);
@@ -791,6 +868,18 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
                     inline 'M' => if (arg.message != null) try messageFmt(arg, writer) else try writer.writeAll("<NO_MESSAGE>"),
                     inline 's' => if (arg.source_location != null) try sourceLocationFmt(arg, writer),
                     inline 'S' => if (arg.source_location != null) try sourceLocationFmt(arg, writer) else try writer.writeAll("<NO_SOURCE>"),
+                    inline 'e' => {
+                        if (comptime IsDebug)
+                            if (arg.stack_trace != null)
+                                try stackTraceFmt(arg, writer);
+                    },
+                    inline 'E' => {
+                        if (comptime IsDebug)
+                            if (arg.stack_trace != null)
+                                try stackTraceFmt(arg, writer)
+                            else
+                                try writer.writeAll("<NO_TRACE>");
+                    },
                     inline else => unreachable,
                 }
             }
