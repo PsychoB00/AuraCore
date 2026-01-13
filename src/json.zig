@@ -9,8 +9,6 @@ const Writer = std.Io.Writer;
 const comptimePrint = std.fmt.comptimePrint;
 const maxInt = std.math.maxInt;
 const floatMantissaBits = std.math.floatMantissaBits;
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
 const eql = std.mem.eql;
 const stringToEnum = std.meta.stringToEnum;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
@@ -19,6 +17,9 @@ const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 const core = @import("core.zig");
 
 const fieldPtr = core.utils.fieldPtr;
+const validateTime = core.time.validate;
+const parseFloat = core.fmt.parseFloat;
+const parseInt = core.fmt.parseInt;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -118,8 +119,10 @@ pub fn JsonInterpreter(comptime Options: JsonInterpreterOptions) type {
                 },
                 inline .@"enum" => {},
                 inline .@"struct" => |info| {
-                    if (comptime Type == Time)
+                    if (comptime Type == Time) {
+                        try validateTime(value.*);
                         return;
+                    }
 
                     inline for (info.fields) |field| {
                         const field_ptr = fieldPtr(Type, field.name, value);
@@ -154,7 +157,7 @@ pub fn JsonInterpreter(comptime Options: JsonInterpreterOptions) type {
                 },
                 .@"struct" => |info| {
                     if (Type == Time)
-                        return 25 + 2;
+                        return 29 + 2;
 
                     var res: usize = 0;
 
@@ -208,7 +211,7 @@ pub fn JsonInterpreter(comptime Options: JsonInterpreterOptions) type {
                         return error.InvalidInt;
 
                     const token = try scanner.next();
-                    dest.* = try parseInt(Type, token.number, 10);
+                    dest.* = try parseInt(Type, token.number);
                 },
                 inline .float => {
                     // Float
@@ -276,6 +279,7 @@ pub fn JsonInterpreter(comptime Options: JsonInterpreterOptions) type {
 
                         const token = try scanner.next();
                         dest.* = try fromISO8601(token.string);
+                        try validateTime(dest.*);
                     } else {
                         // Struct
                         if (token_type != .object_begin)

@@ -5,14 +5,13 @@ const Writer = std.Io.Writer;
 const WriterError = Writer.Error;
 const Reader = std.Io.Reader;
 
-const parseInt = std.fmt.parseInt;
-
 /// Aura
 const core = @import("../../core.zig");
 
 const HttpHeaderType = core.net.headers.HttpHeaderType;
 
 const assertValidate = core.utils.assertValidate;
+const parseInt = core.fmt.parseInt;
 
 /// Http header Content-Length, indicates the size, in bytes, of the message body sent
 pub const ContentLength = struct {
@@ -45,7 +44,7 @@ pub const ContentLength = struct {
         // Get length
         const length_value = try reader.take(reader.bufferedLen());
 
-        self.length = try parseInt(usize, length_value, 10);
+        self.length = try parseInt(usize, length_value);
 
         try _validateLength(self.length);
     }

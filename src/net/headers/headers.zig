@@ -31,6 +31,8 @@ pub const ContentType = @import("ContentType.zig").ContentType;
 
 pub const Authorization = @import("Authorization.zig").Authorization;
 
+pub const Date = @import("Date.zig").Date;
+
 pub const HttpHeaderType = enum {
     request,
     response,

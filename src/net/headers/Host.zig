@@ -11,7 +11,6 @@ const Ip4Address = std.net.Ip4Address;
 const Ip6Address = std.net.Ip6Address;
 
 const assert = std.debug.assert;
-const parseInt = std.fmt.parseInt;
 const isHostnameValid = std.net.isValidHostName;
 const percentEncode = std.Uri.Component.percentEncode;
 const isAscii = std.ascii.isAscii;
@@ -23,6 +22,7 @@ const HttpHeaderType = core.net.headers.HttpHeaderType;
 
 const assertValidate = core.utils.assertValidate;
 const decodeUriStringToUTF8 = core.net.uri.decodeUriStringtoUTF8;
+const parseInt = core.fmt.parseInt;
 
 /// Http header Host, specifies the host and port number of the server to which the request is being sent
 pub const Host = struct {
@@ -78,7 +78,7 @@ pub const Host = struct {
 
                 // Get port
                 const port_value = try reader.take(reader.bufferedLen());
-                self.port = try parseInt(u16, port_value, 10);
+                self.port = try parseInt(u16, port_value);
             }
         };
 
@@ -127,7 +127,7 @@ pub const Host = struct {
 
                 // Get port
                 const port_value = try reader.take(reader.bufferedLen());
-                self.port = try parseInt(u16, port_value, 10);
+                self.port = try parseInt(u16, port_value);
             }
         };
 
@@ -181,7 +181,7 @@ pub const Host = struct {
 
                 // Get port
                 const port_value = try reader.take(reader.bufferedLen());
-                self.port = try parseInt(u16, port_value, 10);
+                self.port = try parseInt(u16, port_value);
             }
         };
 

@@ -27,6 +27,9 @@ const core = @import("core.zig");
 
 const Environment = core.context.Environment;
 
+const assertValidate = core.utils.assertValidate;
+const validateTime = core.time.validate;
+
 /// Third Party
 const zeit = @import("zeit");
 
@@ -750,6 +753,9 @@ pub fn LogFmt(comptime LogType: type, comptime Options: LogFmtOptions) type {
             assert(arg.*.instant != null);
 
             const time = arg.*.instant.?.in(timezone).time();
+
+            assertValidate(validateTime(time));
+
             try time.strftime(writer, Options.time_fmt);
         }
 

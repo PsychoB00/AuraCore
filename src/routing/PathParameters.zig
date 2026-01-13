@@ -7,7 +7,6 @@ const Reader = std.Io.Reader;
 const comptimePrint = std.fmt.comptimePrint;
 const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 const eql = std.mem.eql;
-const parseInt = std.fmt.parseInt;
 
 /// Aura
 const core = @import("../core.zig");
@@ -17,6 +16,8 @@ const ParametersType = core.routing.ParametersType;
 const fieldPtr = core.utils.fieldPtr;
 const decodeUriStringtoUTF8 = core.net.uri.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
+const validateTime = core.time.validate;
+const parseInt = core.fmt.parseInt;
 
 const allowed_path_characters = core.net.uri.allowed_path_characters;
 
@@ -161,16 +162,17 @@ pub fn PathParameters(comptime Structure: type) type {
 
                 switch (@typeInfo(field_type)) {
                     // Unsigned integer
-                    inline .int => field_ptr.* = try parseInt(field_type, parameter_value_value, 10),
+                    inline .int => field_ptr.* = try parseInt(field_type, parameter_value_value),
                     inline else => {
                         const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value, allocator);
 
-                        if (comptime field_type == []const u8)
+                        if (comptime field_type == Time) {
+                            // Time
+                            field_ptr.* = try Time.fromISO8601(decoded_value);
+                            try validateTime(field_ptr.*);
+                        } else if (comptime field_type == []const u8)
                             // String
                             field_ptr.* = decoded_value
-                        else if (comptime field_type == Time)
-                            // Time
-                            field_ptr.* = try Time.fromISO8601(decoded_value)
                         else
                             unreachable;
                     },

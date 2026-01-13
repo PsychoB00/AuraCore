@@ -8,8 +8,6 @@ const indexOf = std.mem.indexOf;
 const indexOfScalarPos = std.mem.indexOfScalarPos;
 const eql = std.mem.eql;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
 const stringToEnum = std.meta.stringToEnum;
 
 /// Aura
@@ -20,6 +18,9 @@ const ParametersType = core.routing.ParametersType;
 const fieldPtr = core.utils.fieldPtr;
 const decodeUriStringtoUTF8 = core.net.uri.decodeUriStringtoUTF8;
 const isResourceParameters = core.routing.isResourceParameters;
+const validateTime = core.time.validate;
+const parseFloat = core.fmt.parseFloat;
+const parseInt = core.fmt.parseInt;
 
 const allowed_path_characters = core.net.uri.allowed_path_characters;
 
@@ -151,7 +152,7 @@ pub fn QueryParameters(comptime Structure: type) type {
                         },
                         inline .int => {
                             // Integer
-                            field_ptr.* = try parseInt(field_type, parameter_value_value, 10);
+                            field_ptr.* = try parseInt(field_type, parameter_value_value);
                         },
                         inline .float => {
                             // Float
@@ -165,12 +166,13 @@ pub fn QueryParameters(comptime Structure: type) type {
                         inline else => {
                             const decoded_value = try decodeUriStringtoUTF8(allowed_path_characters, parameter_value_value, allocator);
 
-                            if (comptime field_type == []const u8)
+                            if (comptime field_type == Time) {
+                                // Time
+                                field_ptr.* = try Time.fromISO8601(decoded_value);
+                                try validateTime(field_ptr.*);
+                            } else if (comptime field_type == []const u8)
                                 // String
                                 field_ptr.* = decoded_value
-                            else if (comptime field_type == Time)
-                                // Time
-                                field_ptr.* = try Time.fromISO8601(decoded_value)
                             else
                                 unreachable;
                         },

@@ -3,8 +3,8 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const toUpper = std.ascii.toUpper;
-const isASCIIHex = std.ascii.isHex;
-const isASCIIDigit = std.ascii.isDigit;
+const isHex = std.ascii.isHex;
+const isDigit = std.ascii.isDigit;
 
 /// Aura
 pub const getVersion = @import("version.zig").getVersion;
@@ -19,16 +19,6 @@ pub const utils = struct {
         );
     }
 
-    pub fn hexCharToInt(character: u8) !u4 {
-        if (!isASCIIHex(character))
-            return error.NonHexCharacter;
-
-        return if (isASCIIDigit(character))
-            @as(u4, @truncate(character - '0'))
-        else
-            @as(u4, @truncate(toUpper(character) - 'A')) + 10;
-    }
-
     pub fn assertValidate(not_error: anyerror!void) void {
         assert(assert_blk: {
             not_error catch break :assert_blk false;
@@ -37,9 +27,11 @@ pub const utils = struct {
     }
 };
 
+pub const fmt = @import("fmt.zig");
 pub const application = @import("application.zig");
 pub const context = @import("context.zig");
 pub const log = @import("log.zig");
+pub const time = @import("time.zig");
 pub const json = @import("json.zig");
 pub const jwt = @import("jwt.zig");
 

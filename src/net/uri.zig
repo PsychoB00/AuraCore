@@ -12,7 +12,7 @@ const utf8Decode4 = std.unicode.utf8Decode4;
 /// Aura
 const core = @import("../core.zig");
 
-const hexCharToInt = core.utils.hexCharToInt;
+const hexCharToInt = core.fmt.hexCharToInt;
 
 pub const allowed_path_characters: []const u8 = "-._~!$&'()*+,;=:@/";
 

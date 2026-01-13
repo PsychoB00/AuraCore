@@ -14,9 +14,17 @@ testing:
 units:
     - [] Create units
 
+parsing:
+    - [x] Create parseInt function which doens't ignore '_'
+    - [x] Create parseFloat function which doens't ignore '_'
+
+time:
+    - [x] Create validation functions
+    - [x] Add validation of time everywhere
+
 net:
     - headers:
-        - [] Add Date
+        - [x] Add Date
         - [] Add WWWAuthenticate
         - [] Add Accept
 

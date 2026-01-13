@@ -98,16 +98,12 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    allocator: Allocator,
-                    result_body: *ResultBody(Item, CommonMediaTypes.json),
+                    context: *Context,
                 ) !StatusCode {
-                    _ = try std.json.parseFromSliceLeaky(Item, allocator, "{\"id\":123,\"name\":\"Hello\"}", .{});
-
-                    result_body.* = .{ .data = .{
-                        .id = 123,
-                        .name = "Awesome shit",
-                        .date = null,
-                    } };
+                    const date: core.net.headers.Date = .{
+                        .time = (zeit.instant(.{}) catch unreachable).time(),
+                    };
+                    context.logger.log(.debug).printFmt("Date: {f}", .{date}).commit();
                     return .ok;
                 }
             },
