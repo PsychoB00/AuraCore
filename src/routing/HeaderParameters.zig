@@ -21,6 +21,8 @@ const ContentType = core.net.headers.ContentType;
 
 const Authorization = core.net.headers.Authorization;
 
+const Accept = core.net.headers.Accept;
+
 const fieldPtr = core.utils.fieldPtr;
 const isResourceParameters = core.routing.isResourceParameters;
 const isHttpHeader = core.net.headers.isHttpHeader;
@@ -36,29 +38,50 @@ const enforcable_headers = [_]type{
     ContentLength,
     ContentType,
     Authorization,
+    Accept,
 };
 
-pub const EnforcedHeadersTag = enum(u2) {
-    default,
-    body,
-    auth,
-    body_auth,
+pub const EnforcedHeadersTag = enum(u3) {
+    pub const BooleanSet = struct {
+        has_body_parameters: bool,
+        has_authorization: bool,
+        has_result_body: bool,
+    };
 
-    pub fn generate(comptime HasAuthentication: bool, comptime HasBodyParameters: bool) EnforcedHeadersTag {
-        return @enumFromInt((@as(u2, @intFromBool(HasAuthentication)) << 1) | @as(u2, @intFromBool(HasBodyParameters)));
+    default = 0b000,
+    body = 0b001,
+    auth = 0b010,
+    body_auth = 0b011,
+    result = 0b100,
+    body_result = 0b101,
+    auth_result = 0b110,
+    body_auth_result = 0b111,
+
+    pub fn generate(comptime conditions: BooleanSet) EnforcedHeadersTag {
+        return @enumFromInt((@as(u3, @intFromBool(conditions.has_result_body)) << 2) |
+            (@as(u3, @intFromBool(conditions.has_authorization)) << 1) |
+            @as(u3, @intFromBool(conditions.has_body_parameters)));
+    }
+
+    /// Checks if `Infered` (defined by HeaderParameters) fulfills `Derived` (defined by APIResource)
+    ///
+    /// For `Infered` to fulfill `Derived`, `Infered` must be either the same as `Derived` or `Derived`
+    /// must have `has_authorization` and `has_result_body` bits set to zero and its `has_body_parameters` bit the same as `Infered`.
+    pub fn derivedFulfilled(comptime Derived: EnforcedHeadersTag, Infered: EnforcedHeadersTag) bool {
+        return @intFromEnum(Derived) == @intFromEnum(Infered) or @intFromEnum(Derived) == @intFromEnum(Infered) & 0b001;
     }
 };
 
 pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
     return switch (Tag) {
-        // default = no body, no auth
+        // default = no body, no auth, no result
         .default => struct {
             pub const tag = Tag;
 
             host: Host,
             user_agent: UserAgent,
         },
-        // body = body, no auth
+        // body = body, no auth, no result
         .body => struct {
             pub const tag = Tag;
 
@@ -68,7 +91,7 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
             content_length: ContentLength,
             content_type: ContentType,
         },
-        // auth = no body, auth
+        // auth = no body, auth, no result
         .auth => struct {
             pub const tag = Tag;
 
@@ -77,7 +100,7 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
 
             authorization: Authorization,
         },
-        // body_auth = body, auth
+        // body_auth = body, auth, no result
         .body_auth => struct {
             pub const tag = Tag;
 
@@ -88,6 +111,52 @@ pub fn EnforcedHeaders(comptime Tag: EnforcedHeadersTag) type {
             content_type: ContentType,
 
             authorization: Authorization,
+        },
+        // result = no body, no auth, result
+        .result => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            accept: Accept,
+        },
+        // body_result = body, no auth, result
+        .body_result => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            content_length: ContentLength,
+            content_type: ContentType,
+
+            accept: Accept,
+        },
+        // auth = no body, auth, result
+        .auth_result => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            authorization: Authorization,
+
+            accept: Accept,
+        },
+        // body_auth = body, auth, result
+        .body_auth_result => struct {
+            pub const tag = Tag;
+
+            host: Host,
+            user_agent: UserAgent,
+
+            content_length: ContentLength,
+            content_type: ContentType,
+
+            authorization: Authorization,
+
+            accept: Accept,
         },
     };
 }
@@ -273,7 +342,7 @@ pub fn HeaderParameters(comptime Structure: type) type {
 
 /// Trait check for HeaderParameters
 ///
-/// - `Type` must fullfil the isResourceParameters trait check
+/// - `Type` must fulfill the isResourceParameters trait check
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.header
 /// - `Type` must have declaration of infered enforced headers type, named "infered_enforced_headers_t"
 ///     - `infered_enforced_headers_t` must fulfill the trait check isEnforcedHeaders

@@ -286,18 +286,17 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                     }
                 }
 
-                const enforced_headers =
-                    EnforcedHeaders(
-                        EnforcedHeadersTag.generate(
-                            Options.authorize != null,
-                            body_param_found != null,
-                        ),
-                    );
+                const derived_enforced_headers =
+                    EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_body_parameters = body_param_found != null,
+                        .has_authorization = Options.authorize != null,
+                        .has_result_body = result_body_found != null,
+                    }));
 
                 if (header_param_found) |header_parameters_type|
-                    if (header_parameters_type.infered_enforced_headers_t != enforced_headers)
+                    if (!EnforcedHeadersTag.derivedFulfilled(derived_enforced_headers.tag, header_parameters_type.infered_enforced_headers_t.tag))
                         @compileError(comptimePrint(
-                            "Infered enforced headers of a APIResource ({s}) is different then observed enforced headers, found in {s}",
+                            "Infered enforced headers of a APIResource ({s}) doesn't fulfill derived enforced headers, found in {s}",
                             .{ @typeName(@This()), valid_method_name_found.? },
                         ));
 

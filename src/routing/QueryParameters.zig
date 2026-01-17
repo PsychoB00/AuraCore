@@ -218,7 +218,7 @@ pub fn QueryParameters(comptime Structure: type) type {
 
 /// Trait check for QueryParameters
 ///
-/// - `Type` must fullfil the isResourceParameters trait check
+/// - `Type` must fulfill the isResourceParameters trait check
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.query
 /// - `Type` must be able to generate `Type` using its declarations and function QueryParameters
 pub fn isQueryParameters(comptime Type: type) bool {

@@ -281,12 +281,11 @@ pub fn StaticRoute(
 
             // Enforced headers parsing
             const enforced_headers_type =
-                HeaderParameters(EnforcedHeaders(
-                    EnforcedHeadersTag.generate(
-                        resource_options.authorize != null,
-                        false,
-                    ),
-                ));
+                HeaderParameters(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                    .has_body_parameters = false,
+                    .has_authorization = resource_options.authorize != null,
+                    .has_result_body = true,
+                })));
 
             var enforced_headers: enforced_headers_type = undefined;
 
@@ -393,14 +392,20 @@ pub fn StaticRoute(
             const method_type = @TypeOf(method_fn);
             const method_parameters_type = MethodParameters(method_type);
 
-            // Parse ResourceParameters and do related actions and checks
+            // Create ResourceParameters
             const resource_parameters_type = ResourceParameters(method_parameters_type);
 
             var resource_parameters: resource_parameters_type = undefined;
 
+            // Create ResourceResult
+            const resource_result_type = ResourceResult(method_parameters_type);
+
+            var resource_result: resource_result_type = undefined;
+
             // Get HeaderParameters info
             comptime var header_parameters_field: ?StructField = null;
             comptime var has_body_parameters: bool = false;
+            comptime var has_result_body: bool = false;
 
             inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
@@ -409,15 +414,20 @@ pub fn StaticRoute(
                     inline else => {},
                 }
             }
+            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
+                switch (field.type.result_type) {
+                    inline .body => has_result_body = true,
+                    inline else => {},
+                }
+            }
 
             const header_parameters_type =
                 comptime if (header_parameters_field == null)
-                    HeaderParameters(EnforcedHeaders(
-                        EnforcedHeadersTag.generate(
-                            resource_options.authorize != null,
-                            has_body_parameters,
-                        ),
-                    ))
+                    HeaderParameters(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_body_parameters = has_body_parameters,
+                        .has_authorization = resource_options.authorize != null,
+                        .has_result_body = has_result_body,
+                    })))
                 else
                     header_parameters_field.?.type;
 
@@ -543,11 +553,6 @@ pub fn StaticRoute(
                 request.setStatus(.bad_request);
                 return;
             }
-
-            // Create ResourceResult
-            const resource_result_type = ResourceResult(method_parameters_type);
-
-            var resource_result: resource_result_type = undefined;
 
             // Call method
             const call_result = @call(

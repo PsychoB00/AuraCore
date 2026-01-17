@@ -98,12 +98,11 @@ const ResourceTree = struct {
         pub const items = APIResource(
             struct {
                 pub fn get(
-                    context: *Context,
+                    result_body: *ResultBody([]const u8, CommonMediaTypes.json),
                 ) !StatusCode {
-                    const date: core.net.headers.Date = .{
-                        .time = (zeit.instant(.{}) catch unreachable).time(),
+                    result_body.* = .{
+                        .data = "Hello world!",
                     };
-                    context.logger.log(.debug).printFmt("Date: {f}", .{date}).commit();
                     return .ok;
                 }
             },

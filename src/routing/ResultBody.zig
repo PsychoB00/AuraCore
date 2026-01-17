@@ -15,6 +15,7 @@ const ResultType = core.routing.ResultType;
 const MediaType = core.net.headers.MediaType;
 const TextSubtype = MediaType.TextSubtype;
 const Charset = TextSubtype.Charset;
+const ApplicationSubtype = MediaType.ApplicationSubtype;
 const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
 const isResourceResult = core.routing.isResourceResult;
@@ -61,6 +62,17 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType)
                 inline .application => |application| {
                     switch (application) {
                         inline .json => try formatLeaky(Structure, &self.data, dest, allocator),
+                        inline .xml, .xhtml_xml => {
+                            const text_data: []const u8 =
+                                if (comptime is_structure_optional)
+                                    self.data.?
+                                else
+                                    self.data;
+
+                            try ApplicationSubtype.validateText(text_data);
+
+                            dest.* = try allocator.dupe(u8, text_data);
+                        },
                         inline .wildcard => unreachable,
                     }
                 },
@@ -91,7 +103,7 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType)
 
 /// Trait check for ResultBody
 ///
-/// - `Type` must fullfil the isResourceResult trait check
+/// - `Type` must fulfill the isResourceResult trait check
 /// - Declaration `result_type` from ResourceResult must have value ResultType.body
 /// - `Type` must have decleration of resulting media type, named "result_media_type"
 ///     - `result_media_type` must be declaretion of MediaType

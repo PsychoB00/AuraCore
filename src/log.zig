@@ -200,7 +200,7 @@ pub const LogFmtOptions = struct {
 ///   after, otherwise the Log will be pernamently reserved in `log_pool`, exhausting it.
 /// - Requesting Log when `log_pool` has been exhausted will lead to blocking of requesting thread. Ensure that `Options.log_pool_size` is set
 ///   appropriately to the amount of threads utilizing this Logger, frequency of Log requests and compexity of Log processing.
-/// - `LogProcessor` handles the processing of collected Logs. It must fullfill the 'isLogProcessor' trait check.
+/// - `LogProcessor` handles the processing of collected Logs. It must fulfill the 'isLogProcessor' trait check.
 pub fn Logger(comptime LogType: type, comptime LogProcessorType: type, comptime Options: LoggerOptions) type {
     // `LogType` validation
     if (!isLog(LogType))

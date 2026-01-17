@@ -31,6 +31,8 @@ pub const ContentType = @import("ContentType.zig").ContentType;
 
 pub const Authorization = @import("Authorization.zig").Authorization;
 
+pub const Accept = @import("Accept.zig").Accept;
+
 pub const Date = @import("Date.zig").Date;
 
 pub const HttpHeaderType = enum {
@@ -68,6 +70,8 @@ const MediaTypeTag = enum {
 pub const MediaType = union(MediaTypeTag) {
     const ApplicationSubtypeTag = enum {
         json,
+        xml,
+        xhtml_xml,
         wildcard,
     };
 
@@ -75,12 +79,31 @@ pub const MediaType = union(MediaTypeTag) {
         pub const max_value_len: usize = 4;
 
         json: void,
+        xml: void,
+        xhtml_xml: void,
         wildcard: void,
 
         pub fn validateType(comptime Self: ApplicationSubtype, comptime Type: type) !void {
             switch (Self) {
-                .json, .wildcard => try validateJsonType(Type),
+                .json => try validateJsonType(Type),
+                .xml, .xhtml_xml => {
+                    if (Type != []const u8)
+                        return error.InvalidType;
+                },
+                .wildcard => {
+                    if (Type == []const u8)
+                        return;
+                    try validateJsonType(Type);
+                },
             }
+        }
+
+        pub fn validateText(text: []const u8) !void {
+            if (text.len == 0)
+                return error.TextTooShort;
+
+            if (!utf8ValidateSlice(text))
+                return error.InvalidEncoding;
         }
 
         pub fn isWildcard(self: ApplicationSubtype) bool {
@@ -93,6 +116,8 @@ pub const MediaType = union(MediaTypeTag) {
 
             switch (a) {
                 .json => return b == .json,
+                .xml => return b == .xml,
+                .xhtml_xml => return b == .xhtml_xml,
                 .wildcard => unreachable,
             }
         }
@@ -100,15 +125,24 @@ pub const MediaType = union(MediaTypeTag) {
         pub fn format(self: ApplicationSubtype, writer: *Writer) WriterError!void {
             switch (self) {
                 .json => try writer.writeAll("json"),
+                .xml => try writer.writeAll("xml"),
+                .xhtml_xml => try writer.writeAll("xhtml+xml"),
                 .wildcard => try writer.writeByte('*'),
             }
         }
 
         pub fn parse(self: *ApplicationSubtype, reader: *Reader) anyerror!void {
-            const application_subtype_value = try reader.takeDelimiterExclusive(';');
+            const buffer_till_semicolon = try reader.peekDelimiterExclusive(';');
+            const buffer_till_comma = try reader.peekDelimiterExclusive(',');
+
+            const application_subtype_value = try reader.take(@min(buffer_till_semicolon.len, buffer_till_comma.len));
 
             if (eqlIgnoreCase(application_subtype_value, "json")) {
                 self.* = .json;
+            } else if (eql(u8, application_subtype_value, "xml")) {
+                self.* = .xml;
+            } else if (eql(u8, application_subtype_value, "xhtml+xml")) {
+                self.* = .xhtml_xml;
             } else if (eql(u8, application_subtype_value, "*")) {
                 self.* = .wildcard;
             } else return error.InvalidApplicationSubtype;
@@ -167,7 +201,7 @@ pub const MediaType = union(MediaTypeTag) {
                 const subtype_parameter_delimiter = try reader.peekByte();
 
                 if (subtype_parameter_delimiter != ';')
-                    return error.InvalidSubtypeParameterDelimiter;
+                    return;
 
                 const untrimed_parameter_name_value = reader.peekDelimiterInclusive('=') catch |err| switch (err) {
                     error.EndOfStream => return,
@@ -182,7 +216,10 @@ pub const MediaType = union(MediaTypeTag) {
 
                 reader.toss(untrimed_parameter_name_value.len);
 
-                const parameter_value_value = try reader.takeDelimiterExclusive(';');
+                const buffer_till_semicolon = try reader.peekDelimiterExclusive(';');
+                const buffer_till_comma = try reader.peekDelimiterExclusive(',');
+
+                const parameter_value_value = try reader.take(@min(buffer_till_semicolon.len, buffer_till_comma.len));
 
                 if (eqlIgnoreCase(parameter_value_value, "utf-8")) {
                     self.* = .utf_8;
@@ -206,6 +243,9 @@ pub const MediaType = union(MediaTypeTag) {
         }
 
         pub fn validateText(text: []const u8, charset: ?Charset) !void {
+            if (text.len == 0)
+                return error.TextTooShort;
+
             if (charset == null) {
                 if (utf8ValidateSlice(text))
                     return;
@@ -272,7 +312,10 @@ pub const MediaType = union(MediaTypeTag) {
         }
 
         pub fn parse(self: *TextSubtype, reader: *Reader) anyerror!void {
-            const text_subtype_value = try reader.takeDelimiterExclusive(';');
+            const buffer_till_semicolon = try reader.peekDelimiterExclusive(';');
+            const buffer_till_comma = try reader.peekDelimiterExclusive(',');
+
+            const text_subtype_value = try reader.take(@min(buffer_till_semicolon.len, buffer_till_comma.len));
 
             if (eqlIgnoreCase(text_subtype_value, "plain")) {
                 self.* = .{ .plain = null };
@@ -353,7 +396,7 @@ pub const MediaType = union(MediaTypeTag) {
             self.* = @unionInit(MediaType, "text", undefined);
             try self.text.parse(reader);
         } else if (eql(u8, media_type_value, "*/")) {
-            if (reader.bufferedLen() < 1)
+            if (reader.bufferedLen() == 0)
                 return error.MissingSubtype;
 
             const wildcard_subtype = try reader.takeByte();

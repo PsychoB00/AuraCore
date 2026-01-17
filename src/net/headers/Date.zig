@@ -29,6 +29,8 @@ const Month = zeit.Month;
 
 const weekdayFromDays = zeit.weekdayFromDays;
 const daysSinceEpoch = zeit.daysSinceEpoch;
+const instant = zeit.instant;
+const time = zeit.Instant.time;
 
 pub const Date = struct {
     pub const http_header_name: []const u8 = "date";

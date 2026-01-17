@@ -28,7 +28,7 @@ pub const UserAgent = struct {
 
         name: []const u8,
         version: ?[]const u8,
-        comments: ?[][]const u8,
+        comments: ?[]const []const u8,
 
         pub fn validate(self: Product) !void {
             try _validateName(self.name);
@@ -57,7 +57,7 @@ pub const UserAgent = struct {
             try validateRFCToken(version.?);
         }
 
-        fn _validateComments(comments: ?[][]const u8) !void {
+        fn _validateComments(comments: ?[]const []const u8) !void {
             if (comments == null)
                 return;
 
@@ -280,13 +280,13 @@ pub const UserAgent = struct {
     pub const http_header_type: HttpHeaderType = .request;
     pub const max_value_len: usize = products_capacity * (Product.max_value_len + 1);
 
-    products: []Product,
+    products: []const Product,
 
     pub fn validate(self: UserAgent) anyerror!void {
         try _validateProducts(self.products);
     }
 
-    fn _validateProducts(products: []Product) !void {
+    fn _validateProducts(products: []const Product) !void {
         if (products.len == 0)
             return error.TooFewProducts;
         if (products.len > products_capacity)

@@ -187,7 +187,7 @@ pub fn PathParameters(comptime Structure: type) type {
 
 /// Trait check for PathParameters
 ///
-/// - `Type` must fullfil the isResourceParameters trait check
+/// - `Type` must fulfill the isResourceParameters trait check
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.path
 /// - `Type` must be able to generate `Type` using its declarations and function PathParameters
 pub fn isPathParameters(comptime Type: type) bool {

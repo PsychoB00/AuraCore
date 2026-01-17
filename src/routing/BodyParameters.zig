@@ -168,7 +168,7 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
 
 /// Trait check for BodyParameters
 ///
-/// - `Type` must fullfil the isResourceParameters trait check
+/// - `Type` must fulfill the isResourceParameters trait check
 /// - Declaration `parameters_type` from ResourceParameters must have value ParametersType.body
 /// - `Type` must have decleration of allowed media types, named "allowed_media_types"
 ///     - `allowed_media_types` must be declaretion of either MediaType or [_]MediaType

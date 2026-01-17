@@ -26,7 +26,7 @@ net:
     - headers:
         - [x] Add Date
         - [] Add WWWAuthenticate
-        - [] Add Accept
+        - [x] Add Accept
 
 log:
     - [] Move LoggingOnRequestProcessor to log
@@ -37,7 +37,9 @@ log:
 routing:
     - StaticRoute:
         - [x] Implement ResultBody
-        - [x] Better error handeling 
+        - [x] Better error handeling
+        - [x] Allow Authorization header on endpoints without authorization
+        - [] Add Accept checking when ResultBody is present or its a StaticResource
     - Result:
         - [o] Create result structs
         - ResultBody:
