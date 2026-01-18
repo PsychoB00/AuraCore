@@ -14,14 +14,6 @@ testing:
 units:
     - [] Create units
 
-parsing:
-    - [x] Create parseInt function which doens't ignore '_'
-    - [x] Create parseFloat function which doens't ignore '_'
-
-time:
-    - [x] Create validation functions
-    - [x] Add validation of time everywhere
-
 net:
     - headers:
         - [x] Add Date
@@ -31,19 +23,14 @@ net:
 log:
     - [] Move LoggingOnRequestProcessor to log
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
-    - [x] Add color to log level
-    - [x] Add stack trace to Log
 
 routing:
     - StaticRoute:
-        - [x] Implement ResultBody
-        - [x] Better error handeling
-        - [x] Allow Authorization header on endpoints without authorization
-        - [] Add Accept checking when ResultBody is present or its a StaticResource
+        - [x] Add Accept checking when ResultBody is present or its a StaticResource
+        - [x] Rework Content headers validation to be consistent with Accept and Authorization
     - Result:
         - [o] Create result structs
         - ResultBody:
-            - [x] Add formating
             - [] Add ResultHeader checking
         - ResultHeader:
             - [] Create ResultHeader

@@ -8,6 +8,7 @@ const WriterError = Writer.Error;
 const Reader = std.Io.Reader;
 
 const assert = std.debug.assert;
+const comptimePrint = std.fmt.comptimePrint;
 const isAscii = std.ascii.isAscii;
 const isAlphanumeric = std.ascii.isAlphanumeric;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
@@ -120,6 +121,17 @@ pub const MediaType = union(MediaTypeTag) {
                 .xhtml_xml => return b == .xhtml_xml,
                 .wildcard => unreachable,
             }
+        }
+
+        pub fn fromFileExtention(comptime FileExtention: []const u8) ?ApplicationSubtype {
+            if (eql(u8, FileExtention, ".json"))
+                return .json
+            else if (eql(u8, FileExtention, ".xml"))
+                return .xml
+            else if (eql(u8, FileExtention, ".xhtml"))
+                return .xhtml_xml
+            else
+                return null;
         }
 
         pub fn format(self: ApplicationSubtype, writer: *Writer) WriterError!void {
@@ -293,6 +305,15 @@ pub const MediaType = union(MediaTypeTag) {
             }
         }
 
+        pub fn fromFileExtention(comptime FileExtention: []const u8) ?TextSubtype {
+            if (eql(u8, FileExtention, ".txt"))
+                return .{ .plain = null }
+            else if (eql(u8, FileExtention, ".html"))
+                return .{ .html = null }
+            else
+                return null;
+        }
+
         pub fn format(self: TextSubtype, writer: *Writer) WriterError!void {
             switch (self) {
                 .plain => |plain| {
@@ -373,6 +394,21 @@ pub const MediaType = union(MediaTypeTag) {
             },
             .wildcard => unreachable,
         }
+    }
+
+    pub fn fromFileExtention(comptime FileExtention: []const u8) MediaType {
+        const application_subtype = ApplicationSubtype.fromFileExtention(FileExtention);
+        if (application_subtype != null)
+            return .{ .application = application_subtype.? };
+
+        const text_subtype = TextSubtype.fromFileExtention(FileExtention);
+        if (text_subtype != null)
+            return .{ .text = text_subtype.? };
+
+        @compileError(comptimePrint(
+            "File extention {s} doesn't represent MediaType",
+            .{FileExtention},
+        ));
     }
 
     pub fn format(self: MediaType, writer: *Writer) WriterError!void {

@@ -63,14 +63,14 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
         }
     };
 
-    const allowed_media_types_array = Gen._allowedMediaTypesArray();
+    const allowed_media_types_arr = Gen._allowedMediaTypesArray();
     const structure_type =
         if (@typeInfo(Structure) == .optional)
             @typeInfo(Structure).optional.child
         else
             Structure;
 
-    for (allowed_media_types_array, 0..) |media_type, index| allowed_media_types_loop: {
+    for (allowed_media_types_arr, 0..) |media_type, index| allowed_media_types_loop: {
         comptime MediaType.validateType(media_type, structure_type) catch |err| {
             @compileError(comptimePrint(
                 "`Structure` is invalid parsing type, cause {s}",
@@ -78,10 +78,10 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
             ));
         };
 
-        if (index >= allowed_media_types_array.len - 1)
+        if (index >= allowed_media_types_arr.len - 1)
             break :allowed_media_types_loop;
 
-        for (allowed_media_types_array[index + 1 ..]) |check_media_type| {
+        for (allowed_media_types_arr[index + 1 ..]) |check_media_type| {
             if (MediaType.areOverlapping(media_type, check_media_type))
                 @compileError("Overlapping MediaType found in `AllowedMediaTypes`");
         }
@@ -92,6 +92,7 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
         pub const parameters_type: ParametersType = .body;
         pub const structure = Structure;
         pub const allowed_media_types = AllowedMediaTypes;
+        pub const allowed_media_types_array = allowed_media_types_arr;
 
         data: Structure,
 
@@ -130,7 +131,17 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
                         return error.RuntimeUnreachable;
 
                     switch (application) {
-                        .json, .wildcard => try parseLeaky(Structure, &(request.body.?), &dest.data, allocator),
+                        .json => try parseLeaky(Structure, &(request.body.?), &dest.data, allocator),
+                        .xml, .xhtml_xml => dest.data = try allocator.dupe(u8, request.body.?),
+                        .wildcard => {
+                            if (comptime is_json_type_blk: {
+                                JsonInterpreter.validateType(structure_type) catch break :is_json_type_blk false;
+                                break :is_json_type_blk true;
+                            })
+                                try parseLeaky(Structure, &(request.body.?), &dest.data, allocator)
+                            else
+                                dest.data = try allocator.dupe(u8, request.body.?);
+                        },
                     }
                 },
                 .text => |text| {

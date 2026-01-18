@@ -7,6 +7,7 @@ const lastIndexOfScalar = std.mem.lastIndexOfScalar;
 const core = @import("../core.zig");
 
 const ResourceOptions = core.routing.ResourceOptions;
+const MediaType = core.net.headers.MediaType;
 
 pub const StaticResourceOptions = struct {
     /// How many bytes can file be
@@ -35,6 +36,7 @@ pub fn StaticResource(comptime FilePath: []const u8, comptime SROptions: StaticR
         pub const file_extention: []const u8 = FilePath[file_extention_start_index..];
         pub const sr_options = SROptions;
         pub const options = Options;
+        pub const infered_media_type = MediaType.fromFileExtention(file_extention);
     };
 }
 

@@ -97,12 +97,10 @@ const ResourceTree = struct {
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn get(
-                    result_body: *ResultBody([]const u8, CommonMediaTypes.json),
+                pub fn post(
+                    body_params: *const BodyParameters([]const u8, CommonMediaTypes.text),
                 ) !StatusCode {
-                    result_body.* = .{
-                        .data = "Hello world!",
-                    };
+                    _ = body_params;
                     return .ok;
                 }
             },

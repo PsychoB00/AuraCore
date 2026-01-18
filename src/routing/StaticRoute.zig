@@ -31,6 +31,11 @@ const HeaderParameters = core.routing.HeaderParameters;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
 
+const MediaType = core.net.headers.MediaType;
+
+const ContentLength = core.net.headers.ContentLength;
+const ContentType = core.net.headers.ContentType;
+const Accept = core.net.headers.Accept;
 const Authorization = core.net.headers.Authorization;
 
 /// Third Party
@@ -320,6 +325,18 @@ pub fn StaticRoute(
                     return;
             }
 
+            // Accept
+            const succesful_accept =
+                _acceptable(
+                    ResourceType.infered_media_type,
+                    &enforced_headers.data.accept,
+                    request,
+                    if (AuthorizationProcessorType != null) &processor else {},
+                );
+
+            if (!succesful_accept)
+                return;
+
             if (comptime MethodType == .GET) {
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
                 const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
@@ -357,6 +374,7 @@ pub fn StaticRoute(
 
             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
                 processor.success(.ok);
+            request.setStatus(.ok);
         }
 
         /// Sets appropriate headers for StaticResource
@@ -404,19 +422,19 @@ pub fn StaticRoute(
 
             // Get HeaderParameters info
             comptime var header_parameters_field: ?StructField = null;
-            comptime var has_body_parameters: bool = false;
-            comptime var has_result_body: bool = false;
+            comptime var body_parameters_found: ?type = null;
+            comptime var result_body_found: ?type = null;
 
             inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
                     inline .header => header_parameters_field = field,
-                    inline .body => has_body_parameters = true,
+                    inline .body => body_parameters_found = field.type,
                     inline else => {},
                 }
             }
             inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
                 switch (field.type.result_type) {
-                    inline .body => has_result_body = true,
+                    inline .body => result_body_found = field.type,
                     inline else => {},
                 }
             }
@@ -424,9 +442,9 @@ pub fn StaticRoute(
             const header_parameters_type =
                 comptime if (header_parameters_field == null)
                     HeaderParameters(EnforcedHeaders(EnforcedHeadersTag.generate(.{
-                        .has_body_parameters = has_body_parameters,
+                        .has_body_parameters = body_parameters_found != null,
                         .has_authorization = resource_options.authorize != null,
-                        .has_result_body = has_result_body,
+                        .has_result_body = result_body_found != null,
                     })))
                 else
                     header_parameters_field.?.type;
@@ -473,6 +491,21 @@ pub fn StaticRoute(
                 header_parameters_ptr = parameters_ptr;
             }
 
+            // Content headers
+            if (comptime body_parameters_found != null) {
+                const successful_content_headers_validation =
+                    _validateContentHeaders(
+                        &body_parameters_found.?.allowed_media_types_array,
+                        &header_parameters_ptr.data.content_length,
+                        &header_parameters_ptr.data.content_type,
+                        request,
+                        if (AuthorizationProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_content_headers_validation)
+                    return;
+            }
+
             // Authorization
             var claims_set: if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void = undefined;
 
@@ -489,6 +522,20 @@ pub fn StaticRoute(
                     );
 
                 if (!successful_authorization)
+                    return;
+            }
+
+            // Accept
+            if (result_body_found != null) {
+                const succesful_accept =
+                    _acceptable(
+                        result_body_found.?.result_media_type,
+                        &header_parameters_ptr.data.accept,
+                        request,
+                        if (AuthorizationProcessorType != null) &processor else {},
+                    );
+
+                if (!succesful_accept)
                     return;
             }
 
@@ -695,6 +742,38 @@ pub fn StaticRoute(
             return true;
         }
 
+        fn _validateContentHeaders(
+            comptime AllowedMediaTypes: []const MediaType,
+            content_length: *const ContentLength,
+            content_type: *const ContentType,
+            request: *const Request,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            if ((request.body orelse "").len != content_length.length) {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                    processor.invalidParameters(.header, .bad_request, error.InvalidContentLength);
+                request.setStatus(.bad_request);
+                return false;
+            }
+
+            var allowed_media_type: ?*const MediaType = null;
+            inline for (AllowedMediaTypes) |media_type| media_type_loop: {
+                if (!MediaType.areOverlapping(content_type.media_type, media_type))
+                    break :media_type_loop;
+
+                allowed_media_type = &media_type;
+            }
+
+            if (allowed_media_type == null) {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                    processor.invalidParameters(.header, .unsupported_media_type, error.InvalidContentType);
+                request.setStatus(.unsupported_media_type);
+                return false;
+            }
+
+            return true;
+        }
+
         fn _authorize(
             comptime MethodType: Method,
             authorization_processor: *const (AuthorizationProcessorType.?),
@@ -728,6 +807,30 @@ pub fn StaticRoute(
                 },
                 .authorized => return true,
             }
+        }
+
+        fn _acceptable(
+            comptime AcceptableMediaType: MediaType,
+            accept_header: *const Accept,
+            request: *const Request,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            var accept_result: bool = false;
+
+            for (accept_header.media_ranges) |media_range| {
+                if (media_range.media_type.areOverlapping(AcceptableMediaType)) {
+                    accept_result = true;
+                    break;
+                }
+            }
+
+            if (!accept_result) {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                    processor.invalidParameters(.header, .not_acceptable, error.InvalidAccept);
+                request.setStatus(.not_acceptable);
+            }
+
+            return accept_result;
         }
     };
 }
