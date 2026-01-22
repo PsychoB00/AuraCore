@@ -17,17 +17,25 @@ units:
 net:
     - headers:
         - [x] Add Date
-        - [] Add WWWAuthenticate
+        - [x] Add WWWAuthenticate
         - [x] Add Accept
+        - [] Check headers for inconsistencies in parsing, formating etc.
+
+jwt:
+    - [] Add realms to ClaimsSet
 
 log:
     - [] Move LoggingOnRequestProcessor to log
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
 
 routing:
+    - AuthorizationPolicy:
+        - [] Add AuthorizationPolicy
     - StaticRoute:
         - [x] Add Accept checking when ResultBody is present or its a StaticResource
         - [x] Rework Content headers validation to be consistent with Accept and Authorization
+        - [] Rework authorization to AuthorizationPolicy
+        - [] Add WWWAuthenticate to authorization
     - Result:
         - [o] Create result structs
         - ResultBody:

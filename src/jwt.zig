@@ -20,7 +20,7 @@ const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
 const assertValidate = core.utils.assertValidate;
 const isContext = core.context.isContext;
-const validateRequirementChar = core.routing.ResourceOptions.validateRequirementChar;
+const validateRequirementChar = core.routing.Requirement.validateRequirementChar;
 const parseLeaky = JsonInterpreter.parseLeaky;
 
 /// Thrid Party

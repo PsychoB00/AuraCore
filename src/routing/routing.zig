@@ -2,8 +2,14 @@
 const std = @import("std");
 
 const isAlphanumeric = std.ascii.isAlphanumeric;
+const isPrint = std.ascii.isPrint;
 
 /// Aura
+const authorization_policy = @import("AuthorizationPolicy.zig");
+pub const Realm = authorization_policy.Realm;
+pub const Requirement = authorization_policy.Requirement;
+pub const AuthorizationPolicy = authorization_policy.AuthorizationPolicy;
+
 const authorization_processor = @import("AuthorizationProcessor.zig");
 pub const AuthorizationResult = authorization_processor.AuthorizationResult;
 pub const isAuthorizationProcessor = authorization_processor.isAuthorizationProcessor;
@@ -51,12 +57,16 @@ const result_body = @import("ResultBody.zig");
 pub const ResultBody = result_body.ResultBody;
 pub const isResultBody = result_body.isResultBody;
 
+const validateRequirements = AuthorizationPolicy.validateRequirements;
+
 /// Third Party
 const zap = @import("zap");
 
 const ErrorStrategy = zap.Endpoint.ErrorStrategy;
 
 pub const ResourceOptions = struct {
+    pub const requirements_capacity: usize = 32;
+
     /// Should endpoint requests for this resource be authorized by AuthorizationProcessor and if so,
     /// what requirements should be used.
     /// Only allowed character for requirements are alphanumeric ascii characters and "-_.:"
@@ -69,32 +79,7 @@ pub const ResourceOptions = struct {
     error_strategy: ErrorStrategy = .raise,
 
     pub fn validate(self: ResourceOptions) !void {
-        if (self.authorize) |authorize_requirements| {
-            if (authorize_requirements.len == 0)
-                return error.TooFewRequirements;
-
-            for (authorize_requirements) |requirement| {
-                if (requirement.len == 0)
-                    return error.RequirementTooShort;
-
-                for (requirement) |character| {
-                    try validateRequirementChar(character);
-                }
-            }
-        }
-    }
-
-    pub fn validateRequirementChar(character: u8) !void {
-        const allowed_characters = "-_.:";
-
-        if (isAlphanumeric(character))
-            return;
-
-        inline for (allowed_characters) |allowed_character| {
-            if (allowed_character == character)
-                return;
-        }
-
-        return error.InvalidCharacter;
+        if (self.authorize) |requirements|
+            try validateRequirements(requirements);
     }
 };

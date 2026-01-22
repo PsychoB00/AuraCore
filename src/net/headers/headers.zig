@@ -11,17 +11,22 @@ const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
 const isAscii = std.ascii.isAscii;
 const isAlphanumeric = std.ascii.isAlphanumeric;
+const isControl = std.ascii.isControl;
 const utf8ValidateSlice = std.unicode.utf8ValidateSlice;
 const hasMethod = std.meta.hasMethod;
 const eql = std.mem.eql;
 const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const trimStart = std.mem.trimStart;
+const utf8Decode2 = std.unicode.utf8Decode2;
+const utf8Decode3 = std.unicode.utf8Decode3;
+const utf8Decode4 = std.unicode.utf8Decode4;
 
 /// Aura
 const core = @import("../../core.zig");
 
 const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
+const hexCharToInt = core.fmt.hexCharToInt;
 const validateJsonType = JsonInterpreter.validateType;
 
 pub const Host = @import("Host.zig").Host;
@@ -31,6 +36,7 @@ pub const ContentLength = @import("ContentLength.zig").ContentLength;
 pub const ContentType = @import("ContentType.zig").ContentType;
 
 pub const Authorization = @import("Authorization.zig").Authorization;
+pub const WWWAuthenticate = @import("WWWAuthenticate.zig").WWWAuthenticate;
 
 pub const Accept = @import("Accept.zig").Accept;
 
@@ -65,6 +71,84 @@ const MediaTypeTag = enum {
     application,
     text,
     wildcard,
+};
+
+pub const Charset = enum {
+    const min_value_len: usize = 5;
+
+    pub const max_value_len: usize = 8;
+
+    utf_8,
+    us_ascii,
+
+    pub fn validateText(self: Charset, text: []const u8) !void {
+        switch (self) {
+            .utf_8 => {
+                if (!utf8ValidateSlice(text))
+                    return error.InvalidEncoding;
+            },
+            .us_ascii => {
+                for (text) |character| {
+                    if (!isAscii(character))
+                        return error.InvalidEncoding;
+                }
+            },
+        }
+    }
+
+    pub fn format(self: Charset, writer: *Writer) WriterError!void {
+        try writer.writeAll("charset=");
+
+        switch (self) {
+            .utf_8 => try writer.writeAll("utf-8"),
+            .us_ascii => try writer.writeAll("us-ascii"),
+        }
+    }
+
+    /// If charset name and value exists in reader this function will parse it
+    ///
+    /// - `self` must be pointing to null
+    pub fn tryParse(self: *?Charset, reader: *Reader) anyerror!void {
+        assert(self.* == null);
+
+        if (reader.bufferedLen() < 9 + min_value_len)
+            // `reader` doesn't have minimum nessesary characters
+            return;
+
+        const subtype_parameter_delimiter = try reader.peekByte();
+
+        if (subtype_parameter_delimiter != ';')
+            return;
+
+        const untrimed_parameter_name_value = reader.peekDelimiterInclusive('=') catch |err| switch (err) {
+            error.EndOfStream => return,
+            else => return err,
+        };
+
+        const parameter_name_value = trimStart(u8, untrimed_parameter_name_value[1..], " \t");
+
+        if (!eqlIgnoreCase(parameter_name_value, "charset="))
+            // `reader` doesn't contain charset
+            return;
+
+        reader.toss(untrimed_parameter_name_value.len);
+
+        const buffer_till_semicolon = try reader.peekDelimiterExclusive(';');
+        const buffer_till_comma = try reader.peekDelimiterExclusive(',');
+
+        const parameter_value_value = try reader.take(@min(buffer_till_semicolon.len, buffer_till_comma.len));
+
+        if (eqlIgnoreCase(parameter_value_value, "utf-8")) {
+            self.* = .utf_8;
+        } else if (eqlIgnoreCase(parameter_value_value, "us-ascii")) {
+            self.* = .us_ascii;
+        } else return error.InvalidCharset;
+    }
+};
+
+pub const AuthScheme = enum {
+    basic,
+    bearer,
 };
 
 /// Http header token assosiated with Content-Type and Accept
@@ -168,79 +252,6 @@ pub const MediaType = union(MediaTypeTag) {
     };
 
     pub const TextSubtype = union(TextSubtypeTag) {
-        pub const Charset = enum {
-            const min_value_len: usize = 5;
-
-            pub const max_value_len: usize = 8;
-
-            utf_8,
-            us_ascii,
-
-            pub fn validateText(self: Charset, text: []const u8) !void {
-                switch (self) {
-                    .utf_8 => {
-                        if (!utf8ValidateSlice(text))
-                            return error.InvalidEncoding;
-                    },
-                    .us_ascii => {
-                        for (text) |character| {
-                            if (!isAscii(character))
-                                return error.InvalidEncoding;
-                        }
-                    },
-                }
-            }
-
-            pub fn format(self: Charset, writer: *Writer) WriterError!void {
-                try writer.writeAll("charset=");
-
-                switch (self) {
-                    .utf_8 => try writer.writeAll("utf-8"),
-                    .us_ascii => try writer.writeAll("us-ascii"),
-                }
-            }
-
-            /// If charset value exists in reader this function will parse it
-            ///
-            /// - `self` must be pointing to null
-            pub fn tryParse(self: *?Charset, reader: *Reader) anyerror!void {
-                assert(self.* == null);
-
-                if (reader.bufferedLen() < 9 + min_value_len)
-                    // `reader` doesn't have minimum nessesary characters
-                    return;
-
-                const subtype_parameter_delimiter = try reader.peekByte();
-
-                if (subtype_parameter_delimiter != ';')
-                    return;
-
-                const untrimed_parameter_name_value = reader.peekDelimiterInclusive('=') catch |err| switch (err) {
-                    error.EndOfStream => return,
-                    else => return err,
-                };
-
-                const parameter_name_value = trimStart(u8, untrimed_parameter_name_value[1..], " \t");
-
-                if (!eqlIgnoreCase(parameter_name_value, "charset="))
-                    // `reader` doesn't contain charset
-                    return;
-
-                reader.toss(untrimed_parameter_name_value.len);
-
-                const buffer_till_semicolon = try reader.peekDelimiterExclusive(';');
-                const buffer_till_comma = try reader.peekDelimiterExclusive(',');
-
-                const parameter_value_value = try reader.take(@min(buffer_till_semicolon.len, buffer_till_comma.len));
-
-                if (eqlIgnoreCase(parameter_value_value, "utf-8")) {
-                    self.* = .utf_8;
-                } else if (eqlIgnoreCase(parameter_value_value, "us-ascii")) {
-                    self.* = .us_ascii;
-                } else return error.InvalidCharset;
-            }
-        };
-
         pub const max_value_len: usize = 2 + Charset.max_value_len;
 
         plain: ?Charset,
@@ -319,14 +330,18 @@ pub const MediaType = union(MediaTypeTag) {
                 .plain => |plain| {
                     try writer.writeAll("plain");
 
-                    if (plain) |charset|
-                        try writer.print("; {f}", .{charset});
+                    if (plain) |charset| {
+                        try writer.writeAll("; ");
+                        try charset.format(writer);
+                    }
                 },
                 .html => |html| {
                     try writer.writeAll("html");
 
-                    if (html) |charset|
-                        try writer.print("; {f}", .{charset});
+                    if (html) |charset| {
+                        try writer.writeAll("; ");
+                        try charset.format(writer);
+                    }
                 },
                 .wildcard => try writer.writeByte('*'),
             }

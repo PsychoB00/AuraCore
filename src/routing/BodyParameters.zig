@@ -15,7 +15,7 @@ const MediaType = core.net.headers.MediaType;
 const ApplicationSubtype = MediaType.ApplicationSubtype;
 const JsonInterpreter = core.json.DefaultJsonInterpreter;
 const TextSubtype = MediaType.TextSubtype;
-const Charset = TextSubtype.Charset;
+const Charset = core.net.headers.Charset;
 
 const ContentLength = core.net.headers.ContentLength;
 const ContentType = core.net.headers.ContentType;

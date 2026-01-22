@@ -14,7 +14,7 @@ const core = @import("../core.zig");
 const ResultType = core.routing.ResultType;
 const MediaType = core.net.headers.MediaType;
 const TextSubtype = MediaType.TextSubtype;
-const Charset = TextSubtype.Charset;
+const Charset = core.net.headers.Charset;
 const ApplicationSubtype = MediaType.ApplicationSubtype;
 const JsonInterpreter = core.json.DefaultJsonInterpreter;
 

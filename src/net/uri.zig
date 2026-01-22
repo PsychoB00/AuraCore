@@ -14,6 +14,7 @@ const core = @import("../core.zig");
 
 const hexCharToInt = core.fmt.hexCharToInt;
 
+pub const allowed_uri_characters: []const u8 = "-._~:/?#[]@!$&'()*+,;=";
 pub const allowed_path_characters: []const u8 = "-._~!$&'()*+,;=:@/";
 
 /// Tries to decode `string` to utf-8

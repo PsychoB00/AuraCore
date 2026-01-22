@@ -18,16 +18,12 @@ const isControl = std.ascii.isControl;
 const core = @import("../../core.zig");
 
 const HttpHeaderType = core.net.headers.HttpHeaderType;
+const AuthScheme = core.net.headers.AuthScheme;
 
 const assertValidate = core.utils.assertValidate;
 
 pub const Authorization = struct {
-    const SchemeTag = enum {
-        basic,
-        bearer,
-    };
-
-    pub const Scheme = union(SchemeTag) {
+    pub const Scheme = union(AuthScheme) {
         pub const Basic = struct {
             const max_username_len: usize = 255;
             const max_password_len: usize = 128;

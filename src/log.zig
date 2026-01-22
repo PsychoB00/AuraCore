@@ -13,7 +13,6 @@ const TTYConfig = std.Io.tty.Config;
 const assert = std.debug.assert;
 const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
-const copyForwards = std.mem.copyForwards;
 const bufPrint = std.fmt.bufPrint;
 const isLower = std.ascii.isLower;
 const toUpper = std.ascii.toUpper;
@@ -505,7 +504,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.context = undefined;
-            copyForwards(u8, &self.context.?, Scope);
+            @memmove((&self.context.?)[0..Scope.len], Scope);
             self.context_len = Scope.len;
             return self;
         }
@@ -562,7 +561,7 @@ pub fn Log(comptime Options: LogOptions) type {
                 ));
 
             self.message = undefined;
-            copyForwards(u8, &self.message.?, Message);
+            @memmove((&self.message.?)[0..Message.len], Message);
             self.message_len = Message.len;
             return self;
         }

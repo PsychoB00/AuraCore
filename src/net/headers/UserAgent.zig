@@ -324,7 +324,7 @@ pub const UserAgent = struct {
                 // `reader` is empty
                 break;
             if (reader.bufferedLen() < 2)
-                // `reader` doesn't have minimal nessesary bytes for product
+                // `reader` doesn't have minimal nessesary bytes for Product
                 return error.ExcessHeaderTail;
 
             // Products delimiter validation
