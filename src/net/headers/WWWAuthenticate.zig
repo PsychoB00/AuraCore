@@ -130,10 +130,10 @@ pub const WWWAuthenticate = struct {
                 (AuthorizationPolicy.requirements_capacity * (Requirement.max_requirement_len + 1));
 
             realm: []const u8,
-            scope: ?[]const []const u8,
-            err: ?[]const u8,
-            error_description: ?[]const u8,
-            error_uri: ?[]const u8,
+            scope: ?[]const []const u8 = null,
+            err: ?[]const u8 = null,
+            error_description: ?[]const u8 = null,
+            error_uri: ?[]const u8 = null,
 
             fn _validateErr(err: []const u8) !void {
                 if (err.len == 0)
@@ -422,7 +422,7 @@ pub const WWWAuthenticate = struct {
         }
     };
 
-    const challenges_capacity: usize = 4;
+    pub const challenges_capacity: usize = 4;
 
     pub const http_header_name: []const u8 = "www-authenticate";
     pub const http_header_type: HttpHeaderType = .response;

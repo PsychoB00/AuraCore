@@ -105,7 +105,10 @@ const ResourceTree = struct {
                 }
             },
             .{
-                .authorize = null,
+                .authorize = .{
+                    .realm = "test",
+                    .requirements = &.{ "abc", "def" },
+                },
             },
         );
     };

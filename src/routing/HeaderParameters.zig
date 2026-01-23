@@ -328,8 +328,8 @@ pub fn HeaderParameters(comptime Structure: type) type {
                 if (assigned_fields[index])
                     break :check_loop;
 
-                if (@typeInfo(field.type) != .optional)
-                    if (field.type == Authorization)
+                if (comptime @typeInfo(field.type) != .optional)
+                    if (comptime field.type == Authorization)
                         return error.Unauthorized
                     else
                         return error.MissingValue;

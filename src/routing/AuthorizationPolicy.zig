@@ -123,18 +123,7 @@ pub const Realm = struct {
 pub const Requirement = struct {
     pub const max_requirement_len: usize = 128;
 
-    pub fn validate(requirement: []const u8) !void {
-        if (requirement.len == 0)
-            return error.RequirementTooShort;
-        if (requirement.len > max_requirement_len)
-            return error.RequirementTooLong;
-
-        for (requirement) |character| {
-            try validateRequirementChar(character);
-        }
-    }
-
-    pub fn validateRequirementChar(character: u8) !void {
+    fn _validateRequirementChar(character: u8) !void {
         const allowed_characters = "-_.:";
 
         if (isAlphanumeric(character))
@@ -147,10 +136,24 @@ pub const Requirement = struct {
 
         return error.InvalidCharacter;
     }
+
+    pub fn validate(requirement: []const u8) !void {
+        if (requirement.len == 0)
+            return error.RequirementTooShort;
+        if (requirement.len > max_requirement_len)
+            return error.RequirementTooLong;
+
+        for (requirement) |character| {
+            try _validateRequirementChar(character);
+        }
+    }
 };
 
 pub const AuthorizationPolicy = struct {
     pub const requirements_capacity: usize = 32;
+
+    realm: []const u8,
+    requirements: []const []const u8,
 
     pub fn validateRequirements(requirements: []const []const u8) !void {
         if (requirements.len == 0)
@@ -158,8 +161,19 @@ pub const AuthorizationPolicy = struct {
         if (requirements.len > requirements_capacity)
             return error.TooManyRequirements;
 
-        for (requirements) |requirement| {
+        for (requirements, 0..) |requirement, index| {
             try Requirement.validate(requirement);
+
+            for (requirements[(index + 1)..]) |check_requirement| {
+                if (eql(u8, requirement, check_requirement))
+                    return error.DuplicateRequirements;
+            }
         }
+    }
+
+    pub fn validate(self: AuthorizationPolicy) !void {
+        try Realm.validate(self.realm);
+
+        try validateRequirements(self.requirements);
     }
 };

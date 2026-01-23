@@ -128,6 +128,7 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
             switch (content_type.media_type) {
                 .application => |application| {
                     (comptime ApplicationSubtype.validateType(.wildcard, Structure)) catch
+                        // Branch can't ever occur, needs to be pruned for compiler
                         return error.RuntimeUnreachable;
 
                     switch (application) {
@@ -146,6 +147,7 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
                 },
                 .text => |text| {
                     (comptime TextSubtype.validateType(.wildcard, structure_type)) catch
+                        // Branch can't ever occur, needs to be pruned for compiler
                         return error.RuntimeUnreachable;
 
                     var charset: ?Charset = null;

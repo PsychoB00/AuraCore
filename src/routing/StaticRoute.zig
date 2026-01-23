@@ -37,6 +37,8 @@ const ContentLength = core.net.headers.ContentLength;
 const ContentType = core.net.headers.ContentType;
 const Accept = core.net.headers.Accept;
 const Authorization = core.net.headers.Authorization;
+const WWWAuthenticate = core.net.headers.WWWAuthenticate;
+const Challenge = WWWAuthenticate.Challenge;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -300,7 +302,7 @@ pub fn StaticRoute(
                     request,
                     &enforced_headers,
                     allocator,
-                    if (AuthorizationProcessorType != null) &processor else {},
+                    if (OnRequestProcessorType != null) &processor else {},
                 );
 
             if (!successful_header_parse)
@@ -318,7 +320,7 @@ pub fn StaticRoute(
                         &claims_set,
                         request,
                         allocator,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!successful_authorization)
@@ -331,7 +333,7 @@ pub fn StaticRoute(
                     ResourceType.infered_media_type,
                     &enforced_headers.data.accept,
                     request,
-                    if (AuthorizationProcessorType != null) &processor else {},
+                    if (OnRequestProcessorType != null) &processor else {},
                 );
 
             if (!succesful_accept)
@@ -461,7 +463,7 @@ pub fn StaticRoute(
                         request,
                         &header_parameters,
                         allocator,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!successful_header_parse)
@@ -482,7 +484,7 @@ pub fn StaticRoute(
                         request,
                         parameters_ptr,
                         allocator,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!successful_header_parse)
@@ -499,7 +501,7 @@ pub fn StaticRoute(
                         &header_parameters_ptr.data.content_length,
                         &header_parameters_ptr.data.content_type,
                         request,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!successful_content_headers_validation)
@@ -518,7 +520,7 @@ pub fn StaticRoute(
                         &claims_set,
                         request,
                         allocator,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!successful_authorization)
@@ -532,7 +534,7 @@ pub fn StaticRoute(
                         result_body_found.?.result_media_type,
                         &header_parameters_ptr.data.accept,
                         request,
-                        if (AuthorizationProcessorType != null) &processor else {},
+                        if (OnRequestProcessorType != null) &processor else {},
                     );
 
                 if (!succesful_accept)
@@ -726,6 +728,31 @@ pub fn StaticRoute(
                 allocator,
             ) catch |err| switch (err) {
                 error.Unauthorized => {
+                    if (comptime Options.authorize == null)
+                        // Branch can't ever occur, needs to be pruned for compiler
+                        return false;
+
+                    var challenges: [WWWAuthenticate.challenges_capacity]Challenge = undefined;
+                    var challenge_count: usize = 0;
+
+                    AuthorizationProcessorType.?.raiseChallenge(
+                        Options.authorize.?,
+                        &challenges,
+                        &challenge_count,
+                        error.MissingAuthorizationHeader,
+                    );
+
+                    const successful_set_www_authenticate =
+                        _setWWWAuthentication(
+                            challenges,
+                            challenge_count,
+                            request,
+                            if (OnRequestProcessorType != null) processor else {},
+                        );
+
+                    if (!successful_set_www_authenticate)
+                        return false;
+
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidAuthorization")))
                         processor.invalidAuthorization(.unauthorized);
                     request.setStatus(.unauthorized);
@@ -783,14 +810,32 @@ pub fn StaticRoute(
             allocator: Allocator,
             processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
         ) bool {
+            var challenges: [WWWAuthenticate.challenges_capacity]Challenge = undefined;
+            var challenge_count: usize = 0;
+
             const authorization_result =
                 authorization_processor.authorize(
                     MethodType,
                     Options.authorize.?,
                     authorization_header,
                     claims_set,
+                    &challenges,
+                    &challenge_count,
                     allocator,
                 );
+
+            if (authorization_result != .authorized) {
+                const successful_set_www_authenticate =
+                    _setWWWAuthentication(
+                        challenges,
+                        challenge_count,
+                        request,
+                        if (OnRequestProcessorType != null) processor else {},
+                    );
+
+                if (!successful_set_www_authenticate)
+                    return false;
+            }
 
             switch (authorization_result) {
                 .unauthorized => {
@@ -831,6 +876,27 @@ pub fn StaticRoute(
             }
 
             return accept_result;
+        }
+
+        fn _setWWWAuthentication(
+            challenges: [WWWAuthenticate.challenges_capacity]Challenge,
+            challenge_count: usize,
+            request: *const Request,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            const www_authenticate_header: WWWAuthenticate = .{ .challenges = challenges[0..challenge_count] };
+
+            var www_authenticate_buffer: [WWWAuthenticate.max_value_len]u8 = undefined;
+            const www_authenticate = bufPrint(&www_authenticate_buffer, "{f}", .{www_authenticate_header}) catch unreachable;
+
+            request.setHeader(WWWAuthenticate.http_header_name, www_authenticate) catch |err| {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
+                    processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                request.setStatus(.internal_server_error);
+                return false;
+            };
+
+            return true;
         }
     };
 }

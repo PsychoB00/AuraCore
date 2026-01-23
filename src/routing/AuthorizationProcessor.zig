@@ -6,11 +6,15 @@ const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 
 const hasMethod = std.meta.hasMethod;
+const hasFn = std.meta.hasFn;
 
 /// Aura
 const core = @import("../core.zig");
 
+const AuthorizationPolicy = core.routing.AuthorizationPolicy;
 const Authorization = core.net.headers.Authorization;
+const WWWAuthenticate = core.net.headers.WWWAuthenticate;
+const Challenge = WWWAuthenticate.Challenge;
 
 /// Third party
 const zap = @import("zap");
@@ -35,7 +39,10 @@ pub const AuthorizationResult = enum {
 ///     - `deinit` must be decleration of method with signature fn (*Type, Allocator) void
 /// - `Type` must have declaration of method for authorizing, named "authorize"
 ///     - `authorize` must be decleration of method with signature
-///       fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) AuthorizationResult
+///       fn (*const Type, comptime Method, comptime AuthorizationPolicy, *const Authorization, *Type.claims_set_t, *[WWWAuthenticate.challenges_capacity]Challenge, *usize, Allocator) AuthorizationResult
+/// - `Type` must have declaration of function for rasing Challenges, named "raiseChallenge"
+///     - `raiseChallenge` must be decleration of function with signature
+///       fn (comptime AuthorizationPolicy, *[WWWAuthenticate.challenges_capacity]Challenge, *usize, anyerror) void
 pub fn isAuthorizationProcessor(comptime Type: type) bool {
     if (@typeInfo(Type) != .@"struct")
         return false;
@@ -55,7 +62,11 @@ pub fn isAuthorizationProcessor(comptime Type: type) bool {
     const has_authorize =
         has_claims_set and
         hasMethod(Type, "authorize") and
-        @TypeOf(Type.authorize) == fn (*const Type, comptime Method, comptime []const []const u8, *const Authorization, *Type.claims_set_t, Allocator) AuthorizationResult;
+        @TypeOf(Type.authorize) == fn (*const Type, comptime Method, comptime AuthorizationPolicy, *const Authorization, *Type.claims_set_t, *[WWWAuthenticate.challenges_capacity]Challenge, *usize, Allocator) AuthorizationResult;
 
-    return has_init and has_deinit and has_authorize;
+    const has_raise_challenge =
+        hasFn(Type, "raiseChallenge") and
+        @TypeOf(Type.raiseChallenge) == fn (comptime AuthorizationPolicy, *[WWWAuthenticate.challenges_capacity]Challenge, *usize, anyerror) void;
+
+    return has_init and has_deinit and has_authorize and has_raise_challenge;
 }

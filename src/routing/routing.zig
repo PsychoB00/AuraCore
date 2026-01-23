@@ -65,12 +65,9 @@ const zap = @import("zap");
 const ErrorStrategy = zap.Endpoint.ErrorStrategy;
 
 pub const ResourceOptions = struct {
-    pub const requirements_capacity: usize = 32;
-
     /// Should endpoint requests for this resource be authorized by AuthorizationProcessor and if so,
-    /// what requirements should be used.
-    /// Only allowed character for requirements are alphanumeric ascii characters and "-_.:"
-    authorize: ?[]const []const u8,
+    /// what authorization policy should be used.
+    authorize: ?AuthorizationPolicy,
     /// Should endpoint request for resource return error if headers in request aren't defined
     /// in resource. Usefull when working with browsers or if you don't have control over
     /// which headers are send
@@ -79,7 +76,7 @@ pub const ResourceOptions = struct {
     error_strategy: ErrorStrategy = .raise,
 
     pub fn validate(self: ResourceOptions) !void {
-        if (self.authorize) |requirements|
-            try validateRequirements(requirements);
+        if (self.authorize) |auth_policy|
+            try auth_policy.validate();
     }
 };

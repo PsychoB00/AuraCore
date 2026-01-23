@@ -4,23 +4,28 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 
+const comptimePrint = std.fmt.comptimePrint;
+const eql = std.mem.eql;
 const isAlphanumeric = std.ascii.isAlphanumeric;
 const isPrint = std.ascii.isPrint;
 const isWhitespace = std.ascii.isWhitespace;
-const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 const hasMethod = std.meta.hasMethod;
 const timestamp = std.time.timestamp;
 
 /// Aura
 const core = @import("core.zig");
 
+const AuthorizationPolicy = core.routing.AuthorizationPolicy;
 const Authorization = core.net.headers.Authorization;
+const WWWAuthenticate = core.net.headers.WWWAuthenticate;
+const Challenge = WWWAuthenticate.Challenge;
 const AuthorizationResult = core.routing.AuthorizationResult;
 const JsonInterpreter = core.json.DefaultJsonInterpreter;
 
 const assertValidate = core.utils.assertValidate;
 const isContext = core.context.isContext;
-const validateRequirementChar = core.routing.Requirement.validateRequirementChar;
+const validateRequirement = core.routing.Requirement.validate;
+const validateRealm = core.routing.Realm.validate;
 const parseLeaky = JsonInterpreter.parseLeaky;
 
 /// Thrid Party
@@ -29,45 +34,59 @@ const jwt = @import("jwt");
 const validateMessage = jwt.validateMessage;
 
 pub const ClaimsSet = struct {
-    pub const Permission = struct {
-        const max_name_len: usize = 32;
+    pub const Realm = struct {
+        pub const Permission = struct {
+            name: []const u8,
+            ops: u4,
+
+            pub fn validate(self: Permission) !void {
+                try validateRequirement(self.name);
+            }
+
+            pub fn allowsCreate(self: Permission) bool {
+                return (self.ops & 0b1000) == 0b1000;
+            }
+
+            pub fn allowsRead(self: Permission) bool {
+                return (self.ops & 0b0100) == 0b0100;
+            }
+
+            pub fn allowsUpdate(self: Permission) bool {
+                return (self.ops & 0b0010) == 0b0010;
+            }
+
+            pub fn allowsDelete(self: Permission) bool {
+                return (self.ops & 0b0001) == 0b0001;
+            }
+        };
 
         name: []const u8,
-        ops: u4,
+        perms: []const Permission,
 
-        pub fn validate(self: Permission) !void {
-            if (self.name.len == 0)
-                return error.NameTooShort;
-            if (self.name.len > max_name_len)
-                return error.NameTooLong;
+        pub fn validate(self: Realm) !void {
+            try validateRealm(self.name);
 
-            for (self.name) |character| {
-                try validateRequirementChar(character);
+            if (self.perms.len == 0)
+                return error.TooFewPerms;
+            if (self.perms.len > AuthorizationPolicy.requirements_capacity)
+                return error.TooManyPerms;
+
+            for (self.perms, 0..) |perm, index| {
+                try perm.validate();
+
+                for (self.perms[(index + 1)..]) |check_perm| {
+                    if (eql(u8, perm.name, check_perm.name))
+                        return error.DuplicatePermissions;
+                }
             }
-        }
-
-        pub fn allowsCreate(self: Permission) bool {
-            return (self.ops & 0b1000) == 0b1000;
-        }
-
-        pub fn allowsRead(self: Permission) bool {
-            return (self.ops & 0b0100) == 0b0100;
-        }
-
-        pub fn allowsUpdate(self: Permission) bool {
-            return (self.ops & 0b0010) == 0b0010;
-        }
-
-        pub fn allowsDelete(self: Permission) bool {
-            return (self.ops & 0b0001) == 0b0001;
         }
     };
 
     const max_sub_len: usize = 64;
-    const perms_capacity: usize = 128;
+    const realms_capacity: usize = 32;
 
     sub: []const u8,
-    perms: ?[]const Permission,
+    rlms: ?[]const Realm,
     iat: i64,
     exp: i64,
 
@@ -82,95 +101,94 @@ pub const ClaimsSet = struct {
                 return error.InvalidCharacter;
         }
 
-        if (self.perms) |perms| {
-            if (perms.len == 0)
-                return error.TooFewPerms;
-            if (perms.len > perms_capacity)
-                return error.TooManyPerms;
+        if (self.rlms) |realms| {
+            if (realms.len == 0)
+                return error.TooFewRealms;
+            if (realms.len > realms_capacity)
+                return error.TooManyRealms;
 
-            for (perms, 0..) |perm, index| {
-                try perm.validate();
+            for (realms, 0..) |realm, index| {
+                try realm.validate();
 
-                for (perms[(index + 1)..]) |check_perm| {
-                    if (eqlIgnoreCase(perm.name, check_perm.name))
-                        return error.DuplicatePermission;
+                for (realms[(index + 1)..]) |check_realm| {
+                    if (eql(u8, realm.name, check_realm.name))
+                        return error.DuplicateRealms;
                 }
             }
         }
     }
 
-    pub fn isValid(self: ClaimsSet, comptime MethodType: Method, comptime RequirementsSet: []const []const u8) Validity {
+    pub fn isValid(self: ClaimsSet, comptime MethodType: Method, comptime AuthPolicy: AuthorizationPolicy) Validity {
         comptime {
-            // `RequirementsSet` correctness assertion
-            if (RequirementsSet.len > perms_capacity)
-                @compileError("`RequirementsSet` mustn't have more requirements then `self` can have permission");
-
-            for (RequirementsSet, 0..) |requirement, index| {
-                if (requirement.len == 0)
-                    @compileError("Requirement with zero length found in `RequirementsSet`");
-                if (requirement.len > Permission.max_name_len)
-                    @compileError("Requirement with length over `Permission.max_name_len` found in `RequirementsSet`");
-
-                for (requirement) |character| {
-                    validateRequirementChar(character) catch
-                        @compileError("Requirement with invalid character found in `RequirementsSet`");
-                }
-
-                for (RequirementsSet[(index + 1)..]) |check_requirement| {
-                    if (eqlIgnoreCase(requirement, check_requirement))
-                        @compileError("`RequirementsSet` mustn't have any duplicate values (case insensitive)");
-                }
-            }
+            // `AuthPolicy` correctness assertion
+            AuthPolicy.validate() catch |err| {
+                @compileError(comptimePrint(
+                    "Invalid `AuthPolicy` found, cause {s}.",
+                    .{@errorName(err)},
+                ));
+            };
         }
 
         assertValidate(self.validate());
 
-        if (self.perms == null)
+        if (self.rlms == null)
             return .invalid;
 
-        inline for (RequirementsSet) |requirement| {
-            var permission: ?*const Permission = null;
+        var found_realm = false;
 
-            for (self.perms.?) |*perm| {
-                if (!eqlIgnoreCase(requirement, perm.name))
-                    continue;
+        for (self.rlms.?) |realm| {
+            if (!eql(u8, realm.name, AuthPolicy.realm))
+                continue;
 
-                permission = perm;
-                break;
+            inline for (AuthPolicy.requirements) |requirement| {
+                var permission: ?*const Realm.Permission = null;
+
+                for (realm.perms) |*perm| {
+                    if (!eql(u8, requirement, perm.name))
+                        continue;
+
+                    permission = perm;
+                    break;
+                }
+
+                if (permission == null)
+                    return .invalid;
+
+                switch (MethodType) {
+                    inline .POST => {
+                        // CREATE
+                        if (!permission.?.allowsCreate())
+                            return .invalid;
+                    },
+                    inline .GET, .HEAD, .OPTIONS => {
+                        // READ
+                        if (!permission.?.allowsRead())
+                            return .invalid;
+                    },
+                    inline .PATCH => {
+                        // UPDATE
+                        if (!permission.?.allowsUpdate())
+                            return .invalid;
+                    },
+                    inline .DELETE => {
+                        // DELETE
+                        if (!permission.?.allowsDelete())
+                            return .invalid;
+                    },
+                    inline .PUT => {
+                        // CREATE + UPDATE
+                        if (!(permission.?.allowsCreate() and permission.?.allowsUpdate()))
+                            return .invalid;
+                    },
+                    inline else => unreachable,
+                }
             }
 
-            if (permission == null)
-                return .invalid;
-
-            switch (MethodType) {
-                inline .POST => {
-                    // CREATE
-                    if (!permission.?.allowsCreate())
-                        return .invalid;
-                },
-                inline .GET, .HEAD, .OPTIONS => {
-                    // READ
-                    if (!permission.?.allowsRead())
-                        return .invalid;
-                },
-                inline .PATCH => {
-                    // UPDATE
-                    if (!permission.?.allowsUpdate())
-                        return .invalid;
-                },
-                inline .DELETE => {
-                    // DELETE
-                    if (!permission.?.allowsDelete())
-                        return .invalid;
-                },
-                inline .PUT => {
-                    // CREATE + UPDATE
-                    if (!(permission.?.allowsCreate() and permission.?.allowsUpdate()))
-                        return .invalid;
-                },
-                inline else => unreachable,
-            }
+            found_realm = true;
         }
+
+        if (!found_realm)
+            return .invalid;
 
         if (self.exp < timestamp())
             return .expired;
@@ -234,15 +252,17 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
         pub fn authorize(
             self: *const JWTAuthorizationProcessorType,
             comptime MethodType: Method,
-            comptime RequirementsSet: []const []const u8,
+            comptime AuthPolicy: AuthorizationPolicy,
             authorization_header: *const Authorization,
             claims_set_dest: *ClaimsSetType,
+            challenges: *[WWWAuthenticate.challenges_capacity]Challenge,
+            challenge_count: *usize,
             allocator: Allocator,
         ) AuthorizationResult {
             assertValidate(self.validate());
 
             if (authorization_header.scheme != .bearer)
-                return .unauthorized;
+                return _failedAuthorize(.unauthorized, AuthPolicy, challenges, challenge_count, error.InvalidScheme);
 
             const message =
                 validateMessage(
@@ -250,19 +270,45 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
                     .HS256,
                     authorization_header.scheme.bearer,
                     .{ .key = self.key },
-                ) catch return .unauthorized;
+                ) catch |err| return _failedAuthorize(.unauthorized, AuthPolicy, challenges, challenge_count, err);
 
-            parseLeaky(ClaimsSetType, &message, claims_set_dest, allocator) catch
-                return .unauthorized;
+            parseLeaky(ClaimsSetType, &message, claims_set_dest, allocator) catch |err|
+                return _failedAuthorize(.unauthorized, AuthPolicy, challenges, challenge_count, err);
 
-            claims_set_dest.validate() catch
-                return .unauthorized;
+            claims_set_dest.validate() catch |err|
+                return _failedAuthorize(.unauthorized, AuthPolicy, challenges, challenge_count, err);
 
-            switch (claims_set_dest.isValid(MethodType, RequirementsSet)) {
-                .invalid => return .forbidden,
-                .expired => return .unauthorized,
+            switch (claims_set_dest.isValid(MethodType, AuthPolicy)) {
+                .invalid => return _failedAuthorize(.forbidden, AuthPolicy, challenges, challenge_count, error.TokenInvalid),
+                .expired => return _failedAuthorize(.unauthorized, AuthPolicy, challenges, challenge_count, error.TokenExpired),
                 .valid => return .authorized,
             }
+        }
+
+        pub fn raiseChallenge(
+            comptime AuthPolicy: AuthorizationPolicy,
+            challenges: *[WWWAuthenticate.challenges_capacity]Challenge,
+            challenge_count: *usize,
+            err: anyerror,
+        ) void {
+            challenges[challenge_count.*] = .{ .bearer = .{
+                .realm = AuthPolicy.realm,
+                .scope = AuthPolicy.requirements,
+                .err = @errorName(err),
+            } };
+
+            challenge_count.* += 1;
+        }
+
+        fn _failedAuthorize(
+            comptime Result: AuthorizationResult,
+            comptime AuthPolicy: AuthorizationPolicy,
+            challenges: *[WWWAuthenticate.challenges_capacity]Challenge,
+            challenge_count: *usize,
+            err: anyerror,
+        ) AuthorizationResult {
+            raiseChallenge(AuthPolicy, challenges, challenge_count, err);
+            return Result;
         }
 
         pub fn deinit(self: *JWTAuthorizationProcessorType, allocator: Allocator) void {
@@ -279,7 +325,7 @@ pub fn JWTAuthorizationProcessor(comptime ClaimsSetType: type) type {
 /// - `Type` must have declaration of method to validate, named "validate"
 ///     - `validate` must be decleration of method with signature fn (Type) anyerror!void
 /// - `Type` must have declaration of method to check if it is valid, named "isValid"
-///     - `isValid` must be decleration of method with signature fn (Type, comptime Method, comptime []const []const u8) Validity
+///     - `isValid` must be decleration of method with signature fn (Type, comptime Method, comptime AuthorizationPolicy) Validity
 pub fn isJWTClaimsSet(comptime Type: type) bool {
     if (@typeInfo(Type) != .@"struct")
         return false;
@@ -290,7 +336,7 @@ pub fn isJWTClaimsSet(comptime Type: type) bool {
 
     const has_is_valid =
         hasMethod(Type, "isValid") and
-        @TypeOf(Type.isValid) == fn (Type, comptime Method, comptime []const []const u8) Validity;
+        @TypeOf(Type.isValid) == fn (Type, comptime Method, comptime AuthorizationPolicy) Validity;
 
     return has_validate and has_is_valid;
 }
