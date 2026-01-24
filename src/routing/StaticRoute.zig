@@ -28,6 +28,9 @@ const isResourceResult = core.routing.isResourceResult;
 const methodToLower = core.net.methodToLower;
 
 const HeaderParameters = core.routing.HeaderParameters;
+const RequiredHeadersTag = core.routing.RequiredHeadersTag;
+const RequiredHeaders = core.routing.RequiredHeaders;
+const ResultHeader = core.routing.ResultHeader;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
 
@@ -43,8 +46,11 @@ const Challenge = WWWAuthenticate.Challenge;
 /// Third Party
 const zeit = @import("zeit");
 
-const Instatnt = zeit.Instant;
+const Instant = zeit.Instant;
 const Time = zeit.Time;
+
+const instant = zeit.instant;
+const time = Instant.time;
 
 const zap = @import("zap");
 
@@ -286,21 +292,21 @@ pub fn StaticRoute(
                 return;
             }
 
-            // Enforced headers parsing
-            const enforced_headers_type =
-                HeaderParameters(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+            // Required headers parsing
+            const required_headers_type =
+                HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
                     .has_body_parameters = false,
                     .has_authorization = resource_options.authorize != null,
                     .has_result_body = true,
                 })));
 
-            var enforced_headers: enforced_headers_type = undefined;
+            var required_headers: required_headers_type = undefined;
 
             const successful_header_parse =
                 _parseHeaderParameters(
-                    enforced_headers_type,
+                    required_headers_type,
                     request,
-                    &enforced_headers,
+                    &required_headers,
                     allocator,
                     if (OnRequestProcessorType != null) &processor else {},
                 );
@@ -316,7 +322,7 @@ pub fn StaticRoute(
                     _authorize(
                         MethodType,
                         self.authorization_processor,
-                        &enforced_headers.data.authorization,
+                        &required_headers.data.authorization,
                         &claims_set,
                         request,
                         allocator,
@@ -331,7 +337,7 @@ pub fn StaticRoute(
             const succesful_accept =
                 _acceptable(
                     ResourceType.infered_media_type,
-                    &enforced_headers.data.accept,
+                    &required_headers.data.accept,
                     request,
                     if (OnRequestProcessorType != null) &processor else {},
                 );
@@ -339,7 +345,40 @@ pub fn StaticRoute(
             if (!succesful_accept)
                 return;
 
-            if (comptime MethodType == .GET) {
+            comptime var status_code: StatusCode = undefined;
+
+            if (comptime MethodType == .HEAD) {
+                // Set EnforcedHeaders
+                comptime status_code = .no_content;
+
+                const enforced_headers_type =
+                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_result_body = false,
+                    })));
+
+                var enforced_headers: enforced_headers_type = .{
+                    .data = .{
+                        .date = .{
+                            .time = time(instant(.{}) catch unreachable),
+                        },
+                    },
+                };
+
+                const successful_header_set =
+                    _setResultHeader(
+                        enforced_headers_type,
+                        request,
+                        &enforced_headers,
+                        allocator,
+                        if (OnRequestProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_set)
+                    return;
+            } else if (comptime MethodType == .GET) {
+                // Read body
+                comptime status_code = .ok;
+
                 var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
                 const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash")))
@@ -352,36 +391,50 @@ pub fn StaticRoute(
                     unreachable;
                 }
 
-                _setStaticResourceHeaders(body.len, request) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
-                        processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
-                    request.setStatus(.internal_server_error);
-                    return;
+                // Set EnforcedHeaders
+                const enforced_headers_type =
+                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_result_body = true,
+                    })));
+
+                var enforced_headers: enforced_headers_type = .{
+                    .data = .{
+                        .date = .{
+                            .time = time(instant(.{}) catch unreachable),
+                        },
+                        .content_length = .{
+                            .length = body.len,
+                        },
+                        .content_type = .{
+                            .media_type = ResourceType.infered_media_type,
+                        },
+                    },
                 };
 
+                const successful_header_set =
+                    _setResultHeader(
+                        enforced_headers_type,
+                        request,
+                        &enforced_headers,
+                        allocator,
+                        if (OnRequestProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_set)
+                    return;
+
+                // Send body
                 request.sendBody(body) catch |err| {
                     if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
                         processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
-            } else if (comptime MethodType == .HEAD) {
-                _setStaticResourceHeaders(0, request) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
-                        processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
-                    request.setStatus(.internal_server_error);
-                    return;
-                };
-            }
+            } else unreachable;
 
             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                processor.success(.ok);
-            request.setStatus(.ok);
-        }
-
-        /// Sets appropriate headers for StaticResource
-        fn _setStaticResourceHeaders(_: usize, _: *const Request) !void {
-            // REWORK
+                processor.success(status_code);
+            request.setStatus(status_code);
         }
 
         /// Calls API Method
@@ -422,10 +475,11 @@ pub fn StaticRoute(
 
             var resource_result: resource_result_type = undefined;
 
-            // Get HeaderParameters info
+            // Get HeaderParameters and ResultHeader info
             comptime var header_parameters_field: ?StructField = null;
+            comptime var result_header_field: ?StructField = null;
             comptime var body_parameters_found: ?type = null;
-            comptime var result_body_found: ?type = null;
+            comptime var result_body_field: ?StructField = null;
 
             inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
@@ -436,27 +490,35 @@ pub fn StaticRoute(
             }
             inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
                 switch (field.type.result_type) {
-                    inline .body => result_body_found = field.type,
-                    inline else => {},
+                    inline .body => result_body_field = field,
+                    inline .header => result_header_field = field,
                 }
             }
 
             const header_parameters_type =
                 comptime if (header_parameters_field == null)
-                    HeaderParameters(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                    HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
                         .has_body_parameters = body_parameters_found != null,
                         .has_authorization = resource_options.authorize != null,
-                        .has_result_body = result_body_found != null,
+                        .has_result_body = result_body_field != null,
                     })))
                 else
                     header_parameters_field.?.type;
 
-            // Parse EnforcedHeaders or HeaderParameters
+            const result_header_type =
+                comptime if (result_header_field == null)
+                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_result_body = result_body_field != null,
+                    })))
+                else
+                    result_header_field.?.type;
+
+            // Parse RequiredHeaders or HeaderParameters
             var header_parameters: header_parameters_type = undefined;
             var header_parameters_ptr: *header_parameters_type = undefined;
 
             if (comptime header_parameters_field == null) {
-                // EnforcedHeaders
+                // RequiredHeaders
                 const successful_header_parse =
                     _parseHeaderParameters(
                         header_parameters_type,
@@ -528,10 +590,10 @@ pub fn StaticRoute(
             }
 
             // Accept
-            if (result_body_found != null) {
+            if (result_body_field != null) {
                 const succesful_accept =
                     _acceptable(
-                        result_body_found.?.result_media_type,
+                        result_body_field.?.type.result_media_type,
                         &header_parameters_ptr.data.accept,
                         request,
                         if (OnRequestProcessorType != null) &processor else {},
@@ -628,40 +690,94 @@ pub fn StaticRoute(
                 };
             } else status = call_result;
 
-            // Set ResourceResult
-            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
-                switch (field.type.result_type) {
-                    inline .header => unreachable,
-                    inline .body => {
-                        const result_ptr = fieldPtr(
-                            resource_result_type,
-                            field.name,
-                            &resource_result,
-                        );
+            // Get ResultBody
+            var result_body_buffer: []u8 = undefined;
 
-                        var buffer: []u8 = undefined;
-                        result_ptr.format(&buffer, allocator) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
-                                processor.formatResultCrash(.body, err);
-                            unreachable;
+            if (result_body_field != null) {
+                const result_body_ptr = fieldPtr(
+                    resource_result_type,
+                    result_body_field.?.name,
+                    &resource_result,
+                );
+
+                result_body_ptr.format(&result_body_buffer, allocator) catch |err| {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
+                        processor.formatResultCrash(.body, err);
+                    unreachable;
+                };
+            }
+
+            // Set ResultHeader or EnforcedHeaders
+            if (result_header_field == null) {
+                // EnforcedHeaders
+                const result_header: result_header_type =
+                    if (comptime result_body_field != null)
+                        .{
+                            .data = .{
+                                .date = .{
+                                    .time = time(instant(.{}) catch unreachable),
+                                },
+                                .content_length = .{
+                                    .length = result_body_buffer.len,
+                                },
+                                .content_type = .{
+                                    .media_type = result_body_field.?.type.result_media_type,
+                                },
+                            },
+                        }
+                    else
+                        .{
+                            .data = .{
+                                .date = .{
+                                    .time = time(instant(.{}) catch unreachable),
+                                },
+                            },
                         };
 
-                        request.sendBody(buffer) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                                processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
-                            request.setStatus(.internal_server_error);
-                            return;
-                        };
-                    },
-                }
+                const successful_header_set =
+                    _setResultHeader(
+                        result_header_type,
+                        request,
+                        &result_header,
+                        allocator,
+                        if (OnRequestProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_set)
+                    return;
+            } else {
+                // ResultHeader
+                const result_header_ptr =
+                    fieldPtr(resource_result_type, result_header_field.?.name, &resource_result);
+
+                const successful_header_set =
+                    _setResultHeader(
+                        result_header_type,
+                        request,
+                        result_header_ptr,
+                        allocator,
+                        if (OnRequestProcessorType != null) &processor else {},
+                    );
+
+                if (!successful_header_set)
+                    return;
+            }
+
+            // Send ResourceResult
+            if (result_body_field != null) {
+                request.sendBody(result_body_buffer) catch |err| {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
+                        processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
             }
 
             if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                processor.success(.ok);
+                processor.success(status);
             request.setStatus(status);
         }
 
-        /// Builds MethodParameters from already initialized parameters
         fn _buildMethodParameters(
             comptime ParametersType: type,
             resource_parameters: *const ResourceParameters(ParametersType),
@@ -876,6 +992,39 @@ pub fn StaticRoute(
             }
 
             return accept_result;
+        }
+
+        fn _setResultHeader(
+            comptime ResultHeaderType: type,
+            request: *const Request,
+            result_headers: *const ResultHeaderType,
+            allocator: Allocator,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            const result_header_structure_info = @typeInfo(ResultHeaderType.structure);
+
+            var header_buffers: [result_header_structure_info.@"struct".fields.len][]u8 = undefined;
+
+            ResultHeaderType.format(
+                result_headers,
+                &header_buffers,
+                allocator,
+            ) catch |err| {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
+                    processor.formatResultCrash(.header, err);
+                unreachable;
+            };
+
+            inline for (result_header_structure_info.@"struct".fields, 0..) |field, index| {
+                request.setHeader(field.type.http_header_name, header_buffers[index]) catch |err| {
+                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError")))
+                        processor.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                    request.setStatus(.internal_server_error);
+                    return false;
+                };
+            }
+
+            return true;
         }
 
         fn _setWWWAuthentication(

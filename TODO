@@ -19,22 +19,21 @@ net:
         - [x] Add WWWAuthenticate
         - [] Check headers for inconsistencies in parsing, formating etc.
 
-jwt:
-    - [x] Add realms to ClaimsSet
-
 log:
     - [] Move LoggingOnRequestProcessor to log
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
 
 routing:
-    - AuthorizationPolicy:
-        - [x] Add AuthorizationPolicy
     - StaticRoute:
-        - [x] Rework authorization to AuthorizationPolicy
-        - [x] Add WWWAuthenticate to authorization
+        - [x] Fix OnRequestProcessor comptime parameter on success
+        - [] Add status code checking
     - Result:
-        - [o] Create result structs
-        - ResultBody:
-            - [] Add ResultHeader checking
+        - [x] Create result structs
+        - [x] Switch EnforcedHeaders and EnforcedHeaders around
         - ResultHeader:
-            - [] Create ResultHeader
+            - [x] Create ResultHeader
+            - [x] Make check for http_header_type
+    - Parameters:
+        - HeaderParameters:
+            - [x] Make check for http_header_type
+

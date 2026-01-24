@@ -5,7 +5,9 @@ const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 const Timer = std.time.Timer;
 const StackTrace = std.builtin.StackTrace;
+const Writer = std.Io.Writer;
 
+const assert = std.debug.assert;
 const hasMethod = std.meta.hasMethod;
 const comptimePrint = std.fmt.comptimePrint;
 const bufPrint = std.fmt.bufPrint;
@@ -17,6 +19,7 @@ const IsDebug = buildin.mode == .Debug;
 /// Aura
 const core = @import("../core.zig");
 
+const status_code = core.net.status_code;
 const ParametersType = core.routing.ParametersType;
 const ResultType = core.routing.ResultType;
 
@@ -24,6 +27,7 @@ const hasLogger = core.context.hasLogger;
 const getLogger = core.context.getLogger;
 const methodToUpper = core.net.methodToUpper;
 const statusCodeToUpper = core.net.statusCodeToUpper;
+const statusCodeFormat = core.net.statusCodeFormat;
 
 /// Third Party
 const zap = @import("zap");
@@ -224,9 +228,8 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 log.print("Server crashed when trying to read file");
         }
 
-        pub fn success(self: *OnRequestProcessorType, comptime Status: StatusCode) void {
-            comptime if (@intFromEnum(Status) < 200 or @intFromEnum(Status) >= 300)
-                @compileError("`Status` must be success code");
+        pub fn success(self: *OnRequestProcessorType, status: StatusCode) void {
+            assert(@intFromEnum(status) >= 200 or @intFromEnum(status) < 300);
 
             const elapsed_time: u64 = self.timer.lap() / 1_000_000;
 
@@ -236,13 +239,17 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
             defer log.commit();
 
-            const status_string = comptime comptimePrint(
-                "{} {s}",
-                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
-            );
+            var status_buffer: [status_code.max_value_len]u8 = undefined;
+            var writer = Writer.fixed(&status_buffer);
 
-            _ = log.printTryFmt("Request handeled succesfully in {}ms, responded with " ++ status_string, .{elapsed_time}) catch
-                log.print("Request handeled succesfully, responded with " ++ status_string);
+            statusCodeFormat(status, &writer) catch unreachable;
+
+            _ = log.printTryFmt("Request handeled succesfully in {}ms, responded with {} {s}", .{
+                elapsed_time,
+                @intFromEnum(status),
+                writer.buffered(),
+            }) catch
+                log.print("Request handeled succesfully");
         }
 
         pub fn deinit(_: *OnRequestProcessorType) void {}

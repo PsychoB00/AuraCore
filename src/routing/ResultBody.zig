@@ -26,7 +26,7 @@ const formatLeaky = JsonInterpreter.formatLeaky;
 /// - `Structure` is a type representing content of the body, can be optional type.
 /// - `ResultMediaType` is a MediaType which specify parsing
 /// - `ResultMediaType` mustn't be a wildcard
-/// - `Structure` must be valid parsing type for MediaType in `ResultMediaType'
+/// - `Structure` must be valid parsing type for `ResultMediaType'
 pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType) type {
     const is_structure_optional = @typeInfo(Structure) == .optional;
     const structure_type =
@@ -53,7 +53,11 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType)
 
         data: Structure,
 
-        pub fn format(self: *const ResultBodyType, dest: *[]u8, allocator: Allocator) !void {
+        pub fn format(
+            self: *const ResultBodyType,
+            dest: *[]u8,
+            allocator: Allocator,
+        ) !void {
             if (comptime is_structure_optional)
                 if (self.data == null)
                     return;

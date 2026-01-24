@@ -103,7 +103,7 @@ pub fn BodyParameters(comptime Structure: type, comptime AllowedMediaTypes: anyt
             content_type: *const ContentType,
             allocator: Allocator,
         ) !void {
-            // EnforcedHeaders validation
+            // RequiredHeaders validation
             if ((request.body orelse "").len != content_length.length)
                 return error.InvalidContentLength;
 

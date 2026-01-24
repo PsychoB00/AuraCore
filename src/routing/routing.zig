@@ -44,8 +44,8 @@ pub const QueryParameters = query_parameters.QueryParameters;
 pub const isQueryParameters = query_parameters.isQueryParameters;
 
 const header_parameters = @import("HeaderParameters.zig");
-pub const EnforcedHeadersTag = header_parameters.EnforcedHeadersTag;
-pub const EnforcedHeaders = header_parameters.EnforcedHeaders;
+pub const RequiredHeadersTag = header_parameters.RequiredHeadersTag;
+pub const RequiredHeaders = header_parameters.RequiredHeaders;
 pub const HeaderParameters = header_parameters.HeaderParameters;
 pub const isHeaderParameters = header_parameters.isHeaderParameters;
 
@@ -56,6 +56,12 @@ pub const isBodyParameters = body_parameters.isBodyParameters;
 const result_body = @import("ResultBody.zig");
 pub const ResultBody = result_body.ResultBody;
 pub const isResultBody = result_body.isResultBody;
+
+const result_header = @import("ResultHeader.zig");
+pub const EnforcedHeadersTag = result_header.EnforcedHeadersTag;
+pub const EnforcedHeaders = result_header.EnforcedHeaders;
+pub const ResultHeader = result_header.ResultHeader;
+pub const isResultHeader = result_header.isResultHeader;
 
 const validateRequirements = AuthorizationPolicy.validateRequirements;
 

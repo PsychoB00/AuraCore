@@ -81,7 +81,7 @@ pub fn QueryParameters(comptime Structure: type) type {
         }
     }
 
-    const has_enforced_parameters = has_non_optional_fields;
+    const has_required_parameters = has_non_optional_fields;
 
     return struct {
         const QueryParametersType = @This();
@@ -95,7 +95,7 @@ pub fn QueryParameters(comptime Structure: type) type {
             dest: *QueryParametersType,
             allocator: Allocator,
         ) !void {
-            if (comptime has_enforced_parameters)
+            if (comptime has_required_parameters)
                 if (request.query == null)
                     return error.MissingQuery;
 

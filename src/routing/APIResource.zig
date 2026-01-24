@@ -10,6 +10,8 @@ const eql = std.mem.eql;
 const core = @import("../core.zig");
 
 const ResourceOptions = core.routing.ResourceOptions;
+const RequiredHeadersTag = core.routing.RequiredHeadersTag;
+const RequiredHeaders = core.routing.RequiredHeaders;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
 
@@ -19,6 +21,7 @@ const isHeaderParameters = core.routing.isHeaderParameters;
 const isBodyParameters = core.routing.isBodyParameters;
 const isContext = core.context.isContext;
 const isResultBody = core.routing.isResultBody;
+const isResultHeader = core.routing.isResultHeader;
 
 /// Third Party
 const zap = @import("zap");
@@ -123,6 +126,7 @@ pub fn isResourceResult(comptime Type: type) bool {
 ///     - *Context
 ///     - Allocator
 ///     - *ResultBody
+///     - *ResultHeader
 /// - Return type of http method must be either StatusCode or !StatusCode.
 /// - For brevity of APIResource type declaration, exact Context type and ClaimsSet type are not checked until StaticRoute
 ///   generation in Router.
@@ -162,6 +166,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
     var context_param_found: ?type = null;
     var allocator_param_found = false;
     var result_body_found: ?type = null;
+    var result_header_found: ?type = null;
 
     for (controller_info.@"struct".decls) |decl| {
         switch (@typeInfo(@TypeOf(@field(Controller, decl.name)))) {
@@ -262,6 +267,14 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                             .{ @typeName(Controller), decl.name },
                                         ));
                                     result_body_found = param_info.child;
+                                } else if (isResultHeader(param_info.child)) {
+                                    // Result header
+                                    if (result_header_found != null)
+                                        @compileError(comptimePrint(
+                                            "Duplicate result Header found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    result_header_found = param_info.child;
                                 } else {
                                     // Context
                                     if (!isContext(param_info.child) or
@@ -286,18 +299,32 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                     }
                 }
 
-                const derived_enforced_headers =
-                    EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                // Derived required headers correctness assertion
+                const derived_required_headers =
+                    RequiredHeaders(RequiredHeadersTag.generate(.{
                         .has_body_parameters = body_param_found != null,
                         .has_authorization = Options.authorize != null,
                         .has_result_body = result_body_found != null,
                     }));
 
                 if (header_param_found) |header_parameters_type|
-                    if (!EnforcedHeadersTag.derivedFulfilled(derived_enforced_headers.tag, header_parameters_type.infered_enforced_headers_t.tag))
+                    if (!RequiredHeadersTag.derivedFulfilled(derived_required_headers.tag, header_parameters_type.infered_required_headers_t.tag))
                         @compileError(comptimePrint(
-                            "Infered enforced headers of a APIResource ({s}) doesn't fulfill derived enforced headers, found in {s}",
-                            .{ @typeName(@This()), valid_method_name_found.? },
+                            "Infered required headers of a APIResource({s}) doesn't fulfill derived required headers, found in {s}",
+                            .{ @typeName(Controller), valid_method_name_found.? },
+                        ));
+
+                // Derived enforced headers correctness assertion
+                const derived_enforced_headers =
+                    EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                        .has_result_body = result_body_found != null,
+                    }));
+
+                if (result_header_found) |result_header_type|
+                    if (!EnforcedHeadersTag.derivedFulfilled(derived_enforced_headers.tag, result_header_type.infered_enforced_headers_t.tag))
+                        @compileError(comptimePrint(
+                            "Infered enforced headers of a APIResource({s}) doesn't fulfill derived enforced headers, found in {s}",
+                            .{ @typeName(Controller), valid_method_name_found.? },
                         ));
 
                 // Return type correctness assertion

@@ -22,12 +22,15 @@ const ClaimsSet = core.jwt.ClaimsSet;
 const PathParameters = core.routing.PathParameters;
 const QueryParameters = core.routing.QueryParameters;
 const HeaderParameters = core.routing.HeaderParameters;
-const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
-const EnforcedHeaders = core.routing.EnforcedHeaders;
+const RequiredHeadersTag = core.routing.RequiredHeadersTag;
+const RequiredHeaders = core.routing.RequiredHeaders;
 const BodyParameters = core.routing.BodyParameters;
 const MediaType = core.net.headers.MediaType;
 const CommonMediaTypes = core.net.headers.CommonMediaTypes;
 const ResultBody = core.routing.ResultBody;
+const ResultHeader = core.routing.ResultHeader;
+const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
+const EnforcedHeaders = core.routing.EnforcedHeaders;
 
 /// Third Party
 const zap = @import("zap");
@@ -97,18 +100,12 @@ const ResourceTree = struct {
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn get(
-                    context: *Context,
-                ) !StatusCode {
-                    _ = context;
-                    return .ok;
+                pub fn get() !StatusCode {
+                    return .not_modified;
                 }
             },
             .{
-                .authorize = .{
-                    .realm = "test",
-                    .requirements = &.{ "abc", "def" },
-                },
+                .authorize = null,
             },
         );
     };

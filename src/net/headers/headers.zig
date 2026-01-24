@@ -74,9 +74,8 @@ const MediaTypeTag = enum {
 };
 
 pub const Charset = enum {
-    const min_value_len: usize = 5;
-
-    pub const max_value_len: usize = 8;
+    const min_value_len: usize = 13;
+    pub const max_value_len: usize = 16;
 
     utf_8,
     us_ascii,
@@ -111,7 +110,7 @@ pub const Charset = enum {
     pub fn tryParse(self: *?Charset, reader: *Reader) anyerror!void {
         assert(self.* == null);
 
-        if (reader.bufferedLen() < 9 + min_value_len)
+        if (reader.bufferedLen() < min_value_len)
             // `reader` doesn't have minimum nessesary characters
             return;
 
@@ -161,7 +160,7 @@ pub const MediaType = union(MediaTypeTag) {
     };
 
     pub const ApplicationSubtype = union(ApplicationSubtypeTag) {
-        pub const max_value_len: usize = 4;
+        pub const max_value_len: usize = 9;
 
         json: void,
         xml: void,
@@ -252,7 +251,7 @@ pub const MediaType = union(MediaTypeTag) {
     };
 
     pub const TextSubtype = union(TextSubtypeTag) {
-        pub const max_value_len: usize = 2 + Charset.max_value_len;
+        pub const max_value_len: usize = 7 + Charset.max_value_len;
 
         plain: ?Charset,
         html: ?Charset,
@@ -365,7 +364,7 @@ pub const MediaType = union(MediaTypeTag) {
         }
     };
 
-    pub const max_value_len: usize = 12 + ApplicationSubtype.max_value_len;
+    pub const max_value_len: usize = 12 + TextSubtype.max_value_len;
 
     application: ApplicationSubtype,
     text: TextSubtype,

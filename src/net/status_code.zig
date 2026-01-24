@@ -1,6 +1,9 @@
 /// STD
 const std = @import("std");
 
+const Writer = std.Io.Writer;
+const WriterError = Writer.Error;
+
 const toUpper = std.ascii.toUpper;
 const replaceScalar = std.mem.replaceScalar;
 
@@ -9,9 +12,7 @@ const zap = @import("zap");
 
 const StatusCode = zap.http.StatusCode;
 
-pub fn statusCodeToLower(comptime Status: StatusCode) []const u8 {
-    return replaceScalar(u8, @tagName(Status), '_', ' ');
-}
+pub const max_value_len: usize = 31;
 
 pub fn statusCodeToUpper(comptime Status: StatusCode) []const u8 {
     const status_string = @tagName(Status);
@@ -22,4 +23,12 @@ pub fn statusCodeToUpper(comptime Status: StatusCode) []const u8 {
     }
 
     return res[0..];
+}
+
+pub fn format(self: StatusCode, writer: *Writer) WriterError!void {
+    const status_string = @tagName(self);
+
+    for (0..status_string.len) |index| {
+        try writer.writeByte(toUpper(status_string[index]));
+    }
 }
