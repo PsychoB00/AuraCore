@@ -27,10 +27,11 @@ const RequiredHeaders = core.routing.RequiredHeaders;
 const BodyParameters = core.routing.BodyParameters;
 const MediaType = core.net.headers.MediaType;
 const CommonMediaTypes = core.net.headers.CommonMediaTypes;
-const ResultBody = core.routing.ResultBody;
 const ResultHeader = core.routing.ResultHeader;
 const EnforcedHeadersTag = core.routing.EnforcedHeadersTag;
 const EnforcedHeaders = core.routing.EnforcedHeaders;
+const ResultBody = core.routing.ResultBody;
+const ResultRedirect = core.routing.ResultRedirect;
 
 /// Third Party
 const zap = @import("zap");
@@ -100,8 +101,20 @@ const ResourceTree = struct {
     pub const api = struct {
         pub const items = APIResource(
             struct {
-                pub fn get() !StatusCode {
-                    return .not_modified;
+                pub fn get(
+                    query_params: *const QueryParameters(struct {
+                        redirect: bool,
+                    }),
+                    result_body: *ResultBody(?[]const u8, CommonMediaTypes.text),
+                    result_redirect: *ResultRedirect(?[]const u8),
+                ) !StatusCode {
+                    if (query_params.data.redirect) {
+                        result_redirect.data = "/pages/hello_world.html";
+                        return .temporary_redirect;
+                    } else {
+                        result_body.data = "Hello world!";
+                        return .ok;
+                    }
                 }
             },
             .{

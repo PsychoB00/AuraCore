@@ -32,3 +32,11 @@ pub fn format(self: StatusCode, writer: *Writer) WriterError!void {
         try writer.writeByte(toUpper(status_string[index]));
     }
 }
+
+pub fn isSuccess(self: StatusCode) bool {
+    return @intFromEnum(self) >= 200 and @intFromEnum(self) < 300;
+}
+
+pub fn isRedirect(self: StatusCode) bool {
+    return @intFromEnum(self) >= 300 and @intFromEnum(self) < 400;
+}

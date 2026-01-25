@@ -20,8 +20,9 @@ const isQueryParameters = core.routing.isQueryParameters;
 const isHeaderParameters = core.routing.isHeaderParameters;
 const isBodyParameters = core.routing.isBodyParameters;
 const isContext = core.context.isContext;
-const isResultBody = core.routing.isResultBody;
 const isResultHeader = core.routing.isResultHeader;
+const isResultBody = core.routing.isResultBody;
+const isResultRedirect = core.routing.isResultRedirect;
 
 /// Third Party
 const zap = @import("zap");
@@ -76,11 +77,13 @@ pub fn isResourceParameters(comptime Type: type) bool {
 pub const ResultType = enum {
     header,
     body,
+    redirect,
 
     pub fn toString(comptime Type: ResultType) []const u8 {
         switch (Type) {
             .header => return "Header",
             .body => return "Body",
+            .redirect => return "Redirect",
         }
     }
 };
@@ -127,6 +130,7 @@ pub fn isResourceResult(comptime Type: type) bool {
 ///     - Allocator
 ///     - *ResultBody
 ///     - *ResultHeader
+///     - *ResultRedirect
 /// - Return type of http method must be either StatusCode or !StatusCode.
 /// - For brevity of APIResource type declaration, exact Context type and ClaimsSet type are not checked until StaticRoute
 ///   generation in Router.
@@ -165,8 +169,9 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
     var claims_set_param_found: ?type = null;
     var context_param_found: ?type = null;
     var allocator_param_found = false;
-    var result_body_found: ?type = null;
     var result_header_found: ?type = null;
+    var result_body_found: ?type = null;
+    var result_redirect_found: ?type = null;
 
     for (controller_info.@"struct".decls) |decl| {
         switch (@typeInfo(@TypeOf(@field(Controller, decl.name)))) {
@@ -259,15 +264,7 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                     ));
                                 }
                             } else {
-                                if (isResultBody(param_info.child)) {
-                                    // Result body
-                                    if (result_body_found != null)
-                                        @compileError(comptimePrint(
-                                            "Duplicate result Body found in {s}.{s}",
-                                            .{ @typeName(Controller), decl.name },
-                                        ));
-                                    result_body_found = param_info.child;
-                                } else if (isResultHeader(param_info.child)) {
+                                if (isResultHeader(param_info.child)) {
                                     // Result header
                                     if (result_header_found != null)
                                         @compileError(comptimePrint(
@@ -275,6 +272,22 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                             .{ @typeName(Controller), decl.name },
                                         ));
                                     result_header_found = param_info.child;
+                                } else if (isResultBody(param_info.child)) {
+                                    // Result body
+                                    if (result_body_found != null)
+                                        @compileError(comptimePrint(
+                                            "Duplicate result Body found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    result_body_found = param_info.child;
+                                } else if (isResultRedirect(param_info.child)) {
+                                    // Result redirect
+                                    if (result_redirect_found != null)
+                                        @compileError(comptimePrint(
+                                            "Duplicate result Redirect found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
+                                    result_redirect_found = param_info.child;
                                 } else {
                                     // Context
                                     if (!isContext(param_info.child) or
@@ -327,12 +340,53 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                             .{ @typeName(Controller), valid_method_name_found.? },
                         ));
 
-                // Return type correctness assertion
-                if (info.return_type == null)
+                // Result composition correctness assertion
+                if (result_header_found != null and result_body_found != null and
+                    (@typeInfo(result_header_found.?.structure) != .optional or @typeInfo(result_body_found.?.structure) != .optional) and
+                    (@typeInfo(result_header_found.?.structure) == .optional or @typeInfo(result_body_found.?.structure) == .optional))
                     @compileError(comptimePrint(
-                        "Function without return type found in {s}.{s}",
-                        .{ @typeName(Controller), decl.name },
+                        "ResultHeader with different data optionality then ResultBody, found in APIResource({s}) {s}",
+                        .{ @typeName(Controller), valid_method_name_found.? },
                     ));
+
+                if (result_redirect_found != null and (result_header_found != null or result_body_found != null)) {
+                    const is_result_redirect_optional = @typeInfo(result_redirect_found.?.structure) == .optional;
+
+                    const are_result_header_body_optional =
+                        if (result_header_found != null)
+                            @typeInfo(result_header_found.?.structure) == .optional
+                        else
+                            @typeInfo(result_body_found.?.structure) == .optional;
+
+                    if (!is_result_redirect_optional or !are_result_header_body_optional)
+                        @compileError(comptimePrint(
+                            "ResourceResult with non-optional data, while both redirect and success ResourceResults are defined, found in APIResource({s}) {s}",
+                            .{ @typeName(Controller), valid_method_name_found.? },
+                        ));
+                }
+
+                if (result_redirect_found != null and result_header_found == null and result_body_found == null and @typeInfo(result_redirect_found.?.structure) == .optional)
+                    @compileError(comptimePrint(
+                        "ResultRedirect with optional data, while ResultHeader and ResultBody are not defined, found in APIResource({s}) {s}",
+                        .{ @typeName(Controller), valid_method_name_found.? },
+                    ));
+
+                if (result_redirect_found == null and
+                    ((result_header_found != null and @typeInfo(result_header_found.?.structure) == .optional) or
+                        (result_body_found != null and @typeInfo(result_body_found.?.structure) == .optional)))
+                    @compileError(comptimePrint(
+                        "ResultHeader or ResultBody with optional data, while ResultRedirect is not defined, found in APIResource({s}) {s}",
+                        .{ @typeName(Controller), valid_method_name_found.? },
+                    ));
+
+                if (result_redirect_found != null)
+
+                    // Return type correctness assertion
+                    if (info.return_type == null)
+                        @compileError(comptimePrint(
+                            "Function without return type found in {s}.{s}",
+                            .{ @typeName(Controller), decl.name },
+                        ));
 
                 const return_type =
                     if (@typeInfo(info.return_type.?) == .error_union)

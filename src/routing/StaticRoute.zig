@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const Method = std.http.Method;
 const StructField = std.builtin.Type.StructField;
 
+const comptimePrint = std.fmt.comptimePrint;
 const hasMethod = std.meta.hasMethod;
 const eql = std.mem.eql;
 const cwd = std.fs.cwd;
@@ -26,6 +27,8 @@ const isAPIResource = core.routing.isAPIResource;
 const isResourceParameters = core.routing.isResourceParameters;
 const isResourceResult = core.routing.isResourceResult;
 const methodToLower = core.net.methodToLower;
+const isStatusCodeSuccess = core.net.isStatusCodeSuccess;
+const isStatusCodeRedirect = core.net.isStatusCodeRedirect;
 
 const HeaderParameters = core.routing.HeaderParameters;
 const RequiredHeadersTag = core.routing.RequiredHeadersTag;
@@ -168,7 +171,7 @@ fn ResourceResult(comptime MethodParametersType: type) type {
             continue;
 
         buffer[assign_index] = .{
-            .name = std.fmt.comptimePrint("{}", .{assign_index}),
+            .name = comptimePrint("{d}", .{assign_index}),
             .type = resource_result_type,
             .default_value_ptr = null,
             .is_comptime = false,
@@ -480,6 +483,7 @@ pub fn StaticRoute(
             comptime var result_header_field: ?StructField = null;
             comptime var body_parameters_found: ?type = null;
             comptime var result_body_field: ?StructField = null;
+            comptime var result_redirect_field: ?StructField = null;
 
             inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
                 switch (field.type.parameters_type) {
@@ -492,6 +496,7 @@ pub fn StaticRoute(
                 switch (field.type.result_type) {
                     inline .body => result_body_field = field,
                     inline .header => result_header_field = field,
+                    inline .redirect => result_redirect_field = field,
                 }
             }
 
@@ -665,6 +670,20 @@ pub fn StaticRoute(
                 return;
             }
 
+            // Set null to any optional result
+            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
+                if (comptime @typeInfo(field.type.structure) == .optional) {
+                    const result_field_ptr =
+                        fieldPtr(
+                            resource_result_type,
+                            field.name,
+                            &resource_result,
+                        );
+
+                    result_field_ptr.data = null;
+                }
+            }
+
             // Call method
             const call_result = @call(
                 .never_inline,
@@ -690,92 +709,190 @@ pub fn StaticRoute(
                 };
             } else status = call_result;
 
+            // Get result pointers
+            const result_body_ptr =
+                if (comptime result_body_field != null)
+                    fieldPtr(resource_result_type, result_body_field.?.name, &resource_result)
+                else
+                    void;
+            const result_header_ptr =
+                if (comptime result_header_field != null)
+                    fieldPtr(resource_result_type, result_header_field.?.name, &resource_result)
+                else
+                    void;
+
             // Get ResultBody
             var result_body_buffer: []u8 = undefined;
 
-            if (result_body_field != null) {
-                const result_body_ptr = fieldPtr(
-                    resource_result_type,
-                    result_body_field.?.name,
-                    &resource_result,
-                );
+            if (comptime result_body_field != null) {
+                body_format_blk: {
+                    if (comptime @typeInfo(result_body_field.?.type.structure) == .optional)
+                        if (result_body_ptr.data != null) {
+                            if (!isStatusCodeSuccess(status)) {
+                                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
+                                    processor.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
+                                unreachable;
+                            }
+                        } else {
+                            if (comptime result_header_field != null) {
+                                if (result_header_ptr.data != null) {
+                                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
+                                        processor.resultCompositionCrash(error.MissingResultBody);
+                                    unreachable;
+                                } else break :body_format_blk;
+                            } else break :body_format_blk;
+                        };
 
-                result_body_ptr.format(&result_body_buffer, allocator) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
-                        processor.formatResultCrash(.body, err);
-                    unreachable;
-                };
+                    result_body_ptr.format(&result_body_buffer, allocator) catch |err| {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
+                            processor.formatResultCrash(.body, err);
+                        unreachable;
+                    };
+                }
             }
 
             // Set ResultHeader or EnforcedHeaders
-            if (result_header_field == null) {
+            if (comptime result_header_field == null) {
                 // EnforcedHeaders
-                const result_header: result_header_type =
-                    if (comptime result_body_field != null)
-                        .{
-                            .data = .{
-                                .date = .{
-                                    .time = time(instant(.{}) catch unreachable),
+                if (isStatusCodeSuccess(status)) {
+                    const result_header: result_header_type =
+                        if (comptime result_body_field != null)
+                            .{
+                                .data = .{
+                                    .date = .{
+                                        .time = time(instant(.{}) catch unreachable),
+                                    },
+                                    .content_length = .{
+                                        .length = result_body_buffer.len,
+                                    },
+                                    .content_type = .{
+                                        .media_type = result_body_field.?.type.result_media_type,
+                                    },
                                 },
-                                .content_length = .{
-                                    .length = result_body_buffer.len,
+                            }
+                        else
+                            .{
+                                .data = .{
+                                    .date = .{
+                                        .time = time(instant(.{}) catch unreachable),
+                                    },
                                 },
-                                .content_type = .{
-                                    .media_type = result_body_field.?.type.result_media_type,
-                                },
-                            },
-                        }
-                    else
-                        .{
-                            .data = .{
-                                .date = .{
-                                    .time = time(instant(.{}) catch unreachable),
-                                },
-                            },
-                        };
+                            };
 
-                const successful_header_set =
-                    _setResultHeader(
-                        result_header_type,
-                        request,
-                        &result_header,
-                        allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
-                    );
+                    const successful_header_set =
+                        _setResultHeader(
+                            result_header_type,
+                            request,
+                            &result_header,
+                            allocator,
+                            if (OnRequestProcessorType != null) &processor else {},
+                        );
 
-                if (!successful_header_set)
-                    return;
+                    if (!successful_header_set)
+                        return;
+                }
             } else {
                 // ResultHeader
-                const result_header_ptr =
-                    fieldPtr(resource_result_type, result_header_field.?.name, &resource_result);
+                header_format_blk: {
+                    if (comptime @typeInfo(result_header_field.?.type.structure) == .optional)
+                        if (result_header_ptr.data != null) {
+                            if (!isStatusCodeSuccess(status)) {
+                                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
+                                    processor.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
+                                unreachable;
+                            }
+                        } else {
+                            if (comptime result_body_field != null) {
+                                if (result_body_ptr.data != null) {
+                                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
+                                        processor.resultCompositionCrash(error.MissingResultHeader);
+                                    unreachable;
+                                } else break :header_format_blk;
+                            } else break :header_format_blk;
+                        };
 
-                const successful_header_set =
-                    _setResultHeader(
-                        result_header_type,
-                        request,
-                        result_header_ptr,
-                        allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
-                    );
+                    const successful_header_set =
+                        _setResultHeader(
+                            result_header_type,
+                            request,
+                            result_header_ptr,
+                            allocator,
+                            if (OnRequestProcessorType != null) &processor else {},
+                        );
 
-                if (!successful_header_set)
-                    return;
+                    if (!successful_header_set)
+                        return;
+                }
             }
 
-            // Send ResourceResult
-            if (result_body_field != null) {
-                request.sendBody(result_body_buffer) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                        processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
-                    request.setStatus(.internal_server_error);
-                    return;
-                };
-            }
+            const result_redirect_ptr =
+                if (comptime result_redirect_field != null)
+                    fieldPtr(resource_result_type, result_redirect_field.?.name, &resource_result)
+                else
+                    void;
 
-            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                processor.success(status);
-            request.setStatus(status);
+            if (isStatusCodeSuccess(status)) {
+                if (comptime result_redirect_field != null) {
+                    if ((@typeInfo(result_redirect_field.?.type.structure) == .optional and result_redirect_ptr.data != null) or @typeInfo(result_redirect_field.?.type.structure) != .optional) {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
+                            processor.matchStatusCodeToResultCrash(.redirect, error.NonRedirectStatusCode);
+                        unreachable;
+                    }
+                }
+
+                // Send ResultBody
+                if (comptime result_body_field != null) {
+                    if (@typeInfo(result_body_field.?.type.structure) != .optional or result_body_ptr.data != null)
+                        request.sendBody(result_body_buffer) catch |err| {
+                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
+                                processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                            request.setStatus(.internal_server_error);
+                            return;
+                        };
+                }
+
+                // Set status code
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
+                    processor.success(status);
+                request.setStatus(status);
+            } else if (isStatusCodeRedirect(status)) {
+                if (comptime result_header_field != null) {
+                    if ((@typeInfo(result_header_field.?.type.structure) == .optional and result_header_ptr.data != null) or @typeInfo(result_header_field.?.type.structure) != .optional) {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
+                            processor.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
+                        unreachable;
+                    }
+                }
+                if (comptime result_body_field != null) {
+                    if ((@typeInfo(result_body_field.?.type.structure) == .optional and result_body_ptr.data != null) or @typeInfo(result_body_field.?.type.structure) != .optional) {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
+                            processor.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
+                        unreachable;
+                    }
+                }
+
+                // Set ResultRedirect
+                if (comptime result_redirect_field != null) {
+                    if (@typeInfo(result_redirect_field.?.type.structure) == .optional and result_redirect_ptr.data == null) {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
+                            processor.resultCompositionCrash(error.MissingResultRedirect);
+                        unreachable;
+                    }
+
+                    request.redirectTo(
+                        if (comptime @typeInfo(result_redirect_field.?.type.structure) == .optional) result_redirect_ptr.data.? else result_redirect_ptr.data,
+                        status,
+                    ) catch |err| {
+                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirectError")))
+                            processor.redirectError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                        request.setStatus(.internal_server_error);
+                        return;
+                    };
+                }
+
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirect")))
+                    processor.redirect(status);
+            }
         }
 
         fn _buildMethodParameters(
@@ -1001,7 +1118,11 @@ pub fn StaticRoute(
             allocator: Allocator,
             processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
         ) bool {
-            const result_header_structure_info = @typeInfo(ResultHeaderType.structure);
+            const result_header_structure_info =
+                if (@typeInfo(ResultHeaderType.structure) == .optional)
+                    @typeInfo(@typeInfo(ResultHeaderType.structure).optional.child)
+                else
+                    @typeInfo(ResultHeaderType.structure);
 
             var header_buffers: [result_header_structure_info.@"struct".fields.len][]u8 = undefined;
 

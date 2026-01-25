@@ -28,6 +28,8 @@ const getLogger = core.context.getLogger;
 const methodToUpper = core.net.methodToUpper;
 const statusCodeToUpper = core.net.statusCodeToUpper;
 const statusCodeFormat = core.net.statusCodeFormat;
+const isStatusCodeSuccess = core.net.isStatusCodeSuccess;
+const isStatusCodeRedirect = core.net.isStatusCodeRedirect;
 
 /// Third Party
 const zap = @import("zap");
@@ -206,6 +208,47 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 _ = log.trace(trace);
         }
 
+        pub fn redirectError(self: *OnRequestProcessorType, comptime Status: StatusCode, err: anyerror, trace: if (IsDebug) StackTrace else void) void {
+            const status_string = comptime comptimePrint(
+                "{} {s}",
+                .{ @intFromEnum(Status), statusCodeToUpper(Status) },
+            );
+
+            var log = self.logger
+                .log(.err)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Failed to redirect, caused by {s}, responded with " ++ status_string, .{@errorName(err)}) catch
+                log.print("Failed to redirect, responded with " ++ status_string);
+
+            if (comptime IsDebug)
+                _ = log.trace(trace);
+        }
+
+        pub fn matchStatusCodeToResultCrash(self: *OnRequestProcessorType, comptime Type: ResultType, err: anyerror) void {
+            var log = self.logger
+                .log(.fatal)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Server crashed when trying to match status code to " ++ Type.toString() ++ "Result, caused by {s}", .{@errorName(err)}) catch
+                log.print("Server crashed when trying to match status code to " ++ Type.toString() ++ "Result");
+        }
+
+        pub fn resultCompositionCrash(self: *OnRequestProcessorType, err: anyerror) void {
+            var log = self.logger
+                .log(.fatal)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            _ = log.printTryFmt("Server crashed when trying to compose result, caused by {s}", .{@errorName(err)}) catch
+                log.print("Server crashed when trying to compose result");
+        }
+
         pub fn formatResultCrash(self: *OnRequestProcessorType, comptime Type: ResultType, err: anyerror) void {
             var log = self.logger
                 .log(.fatal)
@@ -229,7 +272,7 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
         }
 
         pub fn success(self: *OnRequestProcessorType, status: StatusCode) void {
-            assert(@intFromEnum(status) >= 200 or @intFromEnum(status) < 300);
+            assert(isStatusCodeSuccess(status));
 
             const elapsed_time: u64 = self.timer.lap() / 1_000_000;
 
@@ -250,6 +293,30 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 writer.buffered(),
             }) catch
                 log.print("Request handeled succesfully");
+        }
+
+        pub fn redirect(self: *OnRequestProcessorType, status: StatusCode) void {
+            assert(isStatusCodeRedirect(status));
+
+            const elapsed_time: u64 = self.timer.lap() / 1_000_000;
+
+            var log = self.logger
+                .log(.success)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]});
+            defer log.commit();
+
+            var status_buffer: [status_code.max_value_len]u8 = undefined;
+            var writer = Writer.fixed(&status_buffer);
+
+            statusCodeFormat(status, &writer) catch unreachable;
+
+            _ = log.printTryFmt("Request redirected in {}ms, responded with {} {s}", .{
+                elapsed_time,
+                @intFromEnum(status),
+                writer.buffered(),
+            }) catch
+                log.print("Request redirected");
         }
 
         pub fn deinit(_: *OnRequestProcessorType) void {}

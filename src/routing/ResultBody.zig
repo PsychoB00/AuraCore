@@ -59,8 +59,7 @@ pub fn ResultBody(comptime Structure: type, comptime ResultMediaType: MediaType)
             allocator: Allocator,
         ) !void {
             if (comptime is_structure_optional)
-                if (self.data == null)
-                    return;
+                assert(self.data != null);
 
             switch (ResultMediaType) {
                 inline .application => |application| {

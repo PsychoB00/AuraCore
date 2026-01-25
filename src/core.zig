@@ -47,6 +47,8 @@ pub const net = struct {
     pub const status_code = @import("net/status_code.zig");
     pub const statusCodeToUpper = status_code.statusCodeToUpper;
     pub const statusCodeFormat = status_code.format;
+    pub const isStatusCodeSuccess = status_code.isSuccess;
+    pub const isStatusCodeRedirect = status_code.isRedirect;
 };
 
 pub const routing = @import("routing/routing.zig");

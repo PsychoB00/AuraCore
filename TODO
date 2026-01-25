@@ -26,13 +26,15 @@ log:
 routing:
     - StaticRoute:
         - [x] Fix OnRequestProcessor comptime parameter on success
-        - [] Add status code checking
+        - [o] Add status code checking
     - Result:
         - [x] Create result structs
         - [x] Switch EnforcedHeaders and EnforcedHeaders around
         - ResultHeader:
             - [x] Create ResultHeader
             - [x] Make check for http_header_type
+        - ResultRedirect:
+            - [x] Create ResultRedirect
     - Parameters:
         - HeaderParameters:
             - [x] Make check for http_header_type

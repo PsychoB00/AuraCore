@@ -4,6 +4,7 @@ const std = @import("std");
 const Writer = std.Io.Writer;
 const Allocator = std.mem.Allocator;
 
+const assert = std.debug.assert;
 const comptimePrint = std.fmt.comptimePrint;
 
 /// Aura
@@ -94,6 +95,7 @@ pub fn isEnforcedHeaders(comptime Type: type) bool {
 ///
 /// - Fields of `Structure` represent individual result headers, they are order insensitive and
 ///   field names are irelevant.
+/// - `Structure` can be optional.
 /// - Every result header except enforced headers can be optional.
 /// - Result headers must fulfill the isHttpHeader trait check
 /// - Result headers must have http_header_type either response or both
@@ -104,8 +106,15 @@ pub fn isEnforcedHeaders(comptime Type: type) bool {
 ///   arena allocator provided by zap.Request, so no deallocation is nessesary. However this binds
 ///   the lifetime of the memory to lifetime of the zap.Request.
 pub fn ResultHeader(comptime Structure: type) type {
+    const is_structure_optional = @typeInfo(Structure) == .optional;
+    const structure_type =
+        if (is_structure_optional)
+            @typeInfo(Structure).optional.child
+        else
+            Structure;
+
     // `Structure` correctness assertion
-    const structure_info = @typeInfo(Structure);
+    const structure_info = @typeInfo(structure_type);
 
     if (structure_info != .@"struct")
         @compileError("`Structure` must be struct");
@@ -206,15 +215,18 @@ pub fn ResultHeader(comptime Structure: type) type {
             dest: *[structure_info.@"struct".fields.len][]u8,
             allocator: Allocator,
         ) !void {
-            inline for (@typeInfo(Structure).@"struct".fields, 0..) |field, index| {
+            if (comptime is_structure_optional)
+                assert(self.data != null);
+
+            inline for (@typeInfo(structure_type).@"struct".fields, 0..) |field, index| {
                 var buffer: [field.type.max_value_len]u8 = undefined;
                 var writer = Writer.fixed(&buffer);
 
                 var header_ptr =
                     fieldPtr(
-                        Structure,
+                        structure_type,
                         field.name,
-                        &self.data,
+                        if (comptime is_structure_optional) &self.data.? else &self.data,
                     );
 
                 try header_ptr.format(&writer);
