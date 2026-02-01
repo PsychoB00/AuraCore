@@ -476,6 +476,9 @@ pub const WWWAuthenticate = struct {
                 return error.ExcessHeaderTail;
         }
 
+        if (reader.bufferedLen() != 0)
+            return error.ExcessHeaderTail;
+
         // Products validation reduced from `_validateChallenges` to avoid duplicate checks
         if (challenges.len == 0)
             return error.TooFewChallenges;

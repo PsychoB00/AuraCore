@@ -333,6 +333,9 @@ pub const UserAgent = struct {
                 return error.InvalidProductsDelimiter;
         }
 
+        if (reader.bufferedLen() != 0)
+            return error.ExcessHeaderTail;
+
         // Products validation reduced from `_validateProducts` to avoid duplicate checks
         if (products.len == 0)
             return error.TooFewProducts;

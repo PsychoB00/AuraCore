@@ -42,6 +42,9 @@ pub const Accept = @import("Accept.zig").Accept;
 
 pub const Date = @import("Date.zig").Date;
 
+pub const Location = @import("Location.zig").Location;
+pub const Allow = @import("Allow.zig").Allow;
+
 pub const HttpHeaderType = enum {
     request,
     response,

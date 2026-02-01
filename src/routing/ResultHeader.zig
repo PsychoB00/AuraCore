@@ -95,7 +95,7 @@ pub fn isEnforcedHeaders(comptime Type: type) bool {
 ///
 /// - Fields of `Structure` represent individual result headers, they are order insensitive and
 ///   field names are irelevant.
-/// - `Structure` can be optional.
+/// - `Structure` can be an optional type only if ResultRedirect is defined in endpoint
 /// - Every result header except enforced headers can be optional.
 /// - Result headers must fulfill the isHttpHeader trait check
 /// - Result headers must have http_header_type either response or both

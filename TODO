@@ -16,26 +16,17 @@ units:
 
 net:
     - headers:
-        - [x] Add WWWAuthenticate
         - [] Check headers for inconsistencies in parsing, formating etc.
+        - [x] Add Location
+        - [x] Add Allow
 
 log:
     - [] Move LoggingOnRequestProcessor to log
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
+    - [] Add actor field
 
 routing:
     - StaticRoute:
-        - [x] Fix OnRequestProcessor comptime parameter on success
-        - [o] Add status code checking
-    - Result:
-        - [x] Create result structs
-        - [x] Switch EnforcedHeaders and EnforcedHeaders around
-        - ResultHeader:
-            - [x] Create ResultHeader
-            - [x] Make check for http_header_type
-        - ResultRedirect:
-            - [x] Create ResultRedirect
-    - Parameters:
-        - HeaderParameters:
-            - [x] Make check for http_header_type
+        - [x] Add status code checking
+        - [x] Clean up StaticRoute and implement Info
 

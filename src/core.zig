@@ -43,6 +43,7 @@ pub const net = struct {
     const method = @import("net/method.zig");
     pub const methodToLower = method.methodToLower;
     pub const methodToUpper = method.methodToUpper;
+    pub const formatMethodToLower = method.formatToLower;
 
     pub const status_code = @import("net/status_code.zig");
     pub const statusCodeToUpper = status_code.statusCodeToUpper;

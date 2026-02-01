@@ -19,6 +19,8 @@ const IsDebug = buildin.mode == .Debug;
 const core = @import("../core.zig");
 
 const ResourceOptions = core.routing.ResourceOptions;
+const ResourceParametersType = core.routing.ParametersType;
+const ResourceResultType = core.routing.ResultType;
 
 const fieldPtr = core.utils.fieldPtr;
 const assertValidate = core.utils.assertValidate;
@@ -45,6 +47,8 @@ const Accept = core.net.headers.Accept;
 const Authorization = core.net.headers.Authorization;
 const WWWAuthenticate = core.net.headers.WWWAuthenticate;
 const Challenge = WWWAuthenticate.Challenge;
+const Location = core.net.headers.Location;
+const Allow = core.net.headers.Allow;
 
 /// Third Party
 const zeit = @import("zeit");
@@ -203,6 +207,253 @@ pub fn StaticRoute(
 ) type {
     return struct {
         const StaticRouteType = @This();
+
+        /// Declarations for parsing request, calling `MethodType` and formating result
+        fn StaticMethodInfo(comptime MethodType: Method) type {
+            return struct {
+                // General info
+                const has_method = hasMethod(ResourceType.controller_t, methodToLower(MethodType));
+                const has_authorization = resource_options.authorize != null;
+                const has_ap = AuthorizationProcessorType != null;
+
+                // OnRequestProcessor info
+                const orp_type = OnRequestProcessorType orelse void;
+                const has_orp = orp_type != void;
+                const has_orp_invalid_method = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidMethod");
+                const has_orp_invalid_request = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidRequest");
+                const has_orp_read_file_crash = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash");
+                const has_orp_send_body_error = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError");
+                const has_orp_set_headers_error = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "setHeadersError");
+                const has_orp_success = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success");
+
+                // HeaderParameters info
+                const required_headers_type =
+                    HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
+                        .has_body_parameters = false,
+                        .has_authorization = resource_options.authorize != null,
+                        .has_result_body = true,
+                    })));
+
+                const status: StatusCode = if (MethodType == .HEAD) .no_content else .ok;
+
+                // ClaimSet info
+                const claim_set_type = if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void;
+
+                // ResultHeader info
+                const enforced_headers_type =
+                    if (MethodType == .HEAD)
+                        ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                            .has_result_body = false,
+                        })))
+                    else
+                        ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                            .has_result_body = true,
+                        })));
+
+                const VariablesSet = struct {
+                    orp: orp_type,
+                    claims_set: claim_set_type,
+
+                    required_headers: required_headers_type,
+
+                    enforced_headers: enforced_headers_type,
+                    result_body_buffer: [ResourceType.sr_options.max_bytes + 1]u8,
+                    result_body: []u8,
+                };
+            };
+        }
+
+        /// Declarations for parsing request, calling `MethodType` and formating result
+        fn APIMethodInfo(comptime MethodType: Method) type {
+            const Gen = struct {
+                fn _getResourceParameterField(comptime Type: type, comptime ParamType: ResourceParametersType) ?StructField {
+                    for (@typeInfo(Type).@"struct".fields) |field| {
+                        if (@intFromEnum(field.type.parameters_type) == @intFromEnum(ParamType))
+                            return field;
+                    }
+                    return null;
+                }
+
+                fn _getResultHeaderField(comptime Type: type, comptime ResultHeaderType: type) ?StructField {
+                    const result_header_structure =
+                        if (@typeInfo(ResultHeaderType.structure) == .optional)
+                            @typeInfo(ResultHeaderType.structure).optional.child
+                        else
+                            ResultHeaderType.structure;
+
+                    for (@typeInfo(result_header_structure).@"struct".fields) |field| {
+                        const field_type =
+                            if (@typeInfo(field.type) == .optional)
+                                @typeInfo(field.type).optional.child
+                            else
+                                field.type;
+
+                        if (field_type == Type)
+                            return field;
+                    }
+                    return null;
+                }
+
+                fn _getResourceResultField(comptime Type: type, comptime ResultType: ResourceResultType) ?StructField {
+                    for (@typeInfo(Type).@"struct".fields) |field| {
+                        if (@intFromEnum(field.type.result_type) == @intFromEnum(ResultType))
+                            return field;
+                    }
+                    return null;
+                }
+            };
+
+            return if (!hasMethod(ResourceType.controller_t, methodToLower(MethodType)))
+                struct {
+                    // General info
+                    const has_method = hasMethod(ResourceType.controller_t, methodToLower(MethodType));
+
+                    // OnRequestProcessor info
+                    const orp_type = OnRequestProcessorType orelse void;
+                    const has_orp = orp_type != void;
+                    const has_orp_invalid_method = has_orp and hasMethod(OnRequestProcessorType.?, "invalidMethod");
+
+                    // VariablesSet declaration
+                    const VariablesSet = struct {
+                        orp: orp_type,
+                    };
+                }
+            else
+                struct {
+                    // Method info
+                    const method_fn = @field(ResourceType.controller_t, methodToLower(MethodType));
+                    const method_parameters_type = MethodParameters(@TypeOf(method_fn));
+
+                    // General info
+                    const has_method = hasMethod(ResourceType.controller_t, methodToLower(MethodType));
+                    const has_authorization = resource_options.authorize != null;
+                    const has_ap = AuthorizationProcessorType != null;
+                    const has_error_return = @typeInfo(@typeInfo(@TypeOf(method_fn)).@"fn".return_type.?) == .error_union;
+
+                    // OnRequestProcessor info
+                    const orp_type = OnRequestProcessorType orelse void;
+                    const has_orp = orp_type != void;
+                    const has_orp_invalid_method = has_orp and hasMethod(OnRequestProcessorType.?, "invalidMethod");
+                    const has_orp_invalid_parameters = has_orp and hasMethod(OnRequestProcessorType.?, "invalidParameters");
+                    const has_orp_invalid_request = has_orp and hasMethod(OnRequestProcessorType.?, "invalidRequest");
+                    const has_orp_controller_error = has_orp and hasMethod(OnRequestProcessorType.?, "controllerError");
+                    const has_orp_match_status_to_result_crash = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash");
+                    const has_orp_result_composition_crash = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash");
+                    const has_orp_format_result_crash = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash");
+                    const has_orp_send_body_error = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError");
+                    const has_orp_redirect_error = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirectError");
+                    const has_orp_success = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success");
+                    const has_orp_redirect = OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirect");
+
+                    // ClaimSet info
+                    const claim_set_type = if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void;
+
+                    // Method parameters and result info
+                    const resource_parameters_type = ResourceParameters(method_parameters_type);
+                    const resource_result_type = ResourceResult(method_parameters_type);
+
+                    // ResourceParameters info
+                    const path_parameters_field = Gen._getResourceParameterField(resource_parameters_type, .path);
+                    const query_parameters_field = Gen._getResourceParameterField(resource_parameters_type, .query);
+                    const header_parameters_field = Gen._getResourceParameterField(resource_parameters_type, .header);
+                    const body_parameters_field = Gen._getResourceParameterField(resource_parameters_type, .body);
+                    const has_path_parameters = path_parameters_field != null;
+                    const has_query_parameters = path_parameters_field != null;
+                    const has_header_parameters = path_parameters_field != null;
+                    const has_body_parameters = path_parameters_field != null;
+
+                    // HeaderParameters info
+                    const header_parameters_type =
+                        if (header_parameters_field == null)
+                            HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
+                                .has_body_parameters = body_parameters_field != null,
+                                .has_authorization = resource_options.authorize != null,
+                                .has_result_body = result_body_field != null,
+                            })))
+                        else
+                            header_parameters_field.?.type;
+
+                    // ResourceResult info
+                    const result_header_field = Gen._getResourceResultField(resource_result_type, .header);
+                    const result_body_field = Gen._getResourceResultField(resource_result_type, .body);
+                    const result_redirect_field = Gen._getResourceResultField(resource_result_type, .redirect);
+                    const has_result_header = result_header_field != null;
+                    const has_result_body = result_body_field != null;
+                    const has_result_redirect = result_redirect_field != null;
+
+                    // ResultHeader info
+                    const result_header_type =
+                        if (has_result_header)
+                            result_header_field.?.type
+                        else
+                            ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
+                                .has_result_body = result_body_field != null,
+                            })));
+                    const is_result_header_optional: ?bool =
+                        if (has_result_header)
+                            @typeInfo(result_header_type.structure) == .optional
+                        else
+                            null;
+                    const result_header_structure =
+                        if (is_result_header_optional)
+                            @typeInfo(result_header_type.structure).optional.child
+                        else
+                            result_header_type.structure;
+                    const result_header_location_field = Gen._getResultHeaderField(Location, result_header_type);
+                    const has_result_header_location = result_header_location_field != null;
+                    const is_result_header_location_optional =
+                        if (has_result_header_location)
+                            @typeInfo(result_header_location_field.?.type) == .optional
+                        else
+                            null;
+
+                    // ResultBody info
+                    const result_body_type =
+                        if (has_result_body)
+                            result_body_field.?.type
+                        else
+                            void;
+                    const is_result_body_optional: ?bool =
+                        if (has_result_body)
+                            @typeInfo(result_body_type.structure) == .optional
+                        else
+                            null;
+
+                    // ResultRedirect info
+                    const result_redirect_type =
+                        if (has_result_redirect)
+                            result_redirect_field.?.type
+                        else
+                            void;
+                    const is_result_redirect_optional: ?bool =
+                        if (has_result_redirect)
+                            @typeInfo(result_redirect_type.structure) == .optional
+                        else
+                            null;
+
+                    // VariablesSet declaration
+                    const VariablesSet = struct {
+                        orp: orp_type,
+                        claims_set: claim_set_type,
+
+                        resource_parameters: resource_parameters_type,
+                        required_header_parameters: header_parameters_type,
+                        header_parameters_ptr: *header_parameters_type,
+                        query_parsed: ?bool,
+                        body_parsed: ?bool,
+
+                        status: StatusCode,
+
+                        resource_result: resource_result_type,
+                        enforced_result_header: result_header_type,
+                        result_header_ptr: *result_header_type,
+                        result_body_ptr: *result_body_type,
+                        result_body_buffer: []u8,
+                        result_redirect_ptr: *result_redirect_type,
+                    };
+                };
+        }
+
         pub const static_path = Path;
         pub const resource_options = Options;
         pub const resource_category = ResourceCategory.fromType(ResourceType);
@@ -275,61 +526,74 @@ pub fn StaticRoute(
             context: *ContextType,
             request: *const Request,
         ) void {
-            var processor: (OnRequestProcessorType orelse void) = undefined;
-            if (comptime OnRequestProcessorType != null) {
-                processor.init(StaticRouteType, MethodType, allocator, context, request);
-                defer processor.deinit();
+            // Get Info
+            const Info = StaticMethodInfo(MethodType);
+
+            // Get VariablesSet
+            var var_set: Info.VariablesSet = undefined;
+
+            if (comptime Info.has_orp) {
+                var_set.orp.init(StaticRouteType, MethodType, allocator, context, request);
+                defer var_set.orp.deinit();
             }
 
             if (comptime !(MethodType == .GET or MethodType == .HEAD)) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidMethod")))
-                    processor.invalidMethod(.method_not_allowed);
+                if (comptime Info.has_orp_invalid_method)
+                    var_set.orp.invalidMethod(.method_not_allowed);
+
+                const allow_header: Allow = .{
+                    .methods = &[_]Method{ .GET, .HEAD },
+                };
+
+                var allow_buffer: [Allow.max_value_len]u8 = undefined;
+                const allow = bufPrint(&allow_buffer, "{f}", .{allow_header}) catch |err| {
+                    if (Info.has_orp_set_headers_error)
+                        var_set.orp.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
+
+                request.setHeader(Allow.http_header_name, allow) catch |err| {
+                    if (Info.has_orp_set_headers_error)
+                        var_set.orp.setHeadersError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                    request.setStatus(.internal_server_error);
+                    return;
+                };
                 request.setStatus(.method_not_allowed);
                 return;
             }
 
             if (request.path == null or request.path.?.len != Path.len) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidRequest")))
-                    processor.invalidRequest(.not_found, error.InvalidPath);
+                if (comptime Info.has_orp_invalid_request)
+                    var_set.orp.invalidRequest(.not_found, error.InvalidPath);
                 request.setStatus(.not_found);
                 return;
             }
 
             // Required headers parsing
-            const required_headers_type =
-                HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
-                    .has_body_parameters = false,
-                    .has_authorization = resource_options.authorize != null,
-                    .has_result_body = true,
-                })));
-
-            var required_headers: required_headers_type = undefined;
-
             const successful_header_parse =
                 _parseHeaderParameters(
-                    required_headers_type,
+                    Info.required_headers_type,
                     request,
-                    &required_headers,
+                    &var_set.required_headers,
                     allocator,
-                    if (OnRequestProcessorType != null) &processor else {},
+                    if (comptime Info.has_orp) &var_set.orp else {},
                 );
 
             if (!successful_header_parse)
                 return;
 
             // Authorization
-            if (comptime Options.authorize != null) {
-                var claims_set: AuthorizationProcessorType.?.claims_set_t = undefined;
-
+            if (comptime Info.has_authorization) {
                 const successful_authorization =
                     _authorize(
                         MethodType,
                         self.authorization_processor,
-                        &required_headers.data.authorization,
-                        &claims_set,
+                        &var_set.required_headers.data.authorization,
+                        &var_set.claims_set,
                         request,
                         allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (comptime Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!successful_authorization)
@@ -340,26 +604,17 @@ pub fn StaticRoute(
             const succesful_accept =
                 _acceptable(
                     ResourceType.infered_media_type,
-                    &required_headers.data.accept,
+                    &var_set.required_headers.data.accept,
                     request,
-                    if (OnRequestProcessorType != null) &processor else {},
+                    if (comptime Info.has_orp) &var_set.orp else {},
                 );
 
             if (!succesful_accept)
                 return;
 
-            comptime var status_code: StatusCode = undefined;
-
             if (comptime MethodType == .HEAD) {
                 // Set EnforcedHeaders
-                comptime status_code = .no_content;
-
-                const enforced_headers_type =
-                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
-                        .has_result_body = false,
-                    })));
-
-                var enforced_headers: enforced_headers_type = .{
+                var_set.enforced_headers = .{
                     .data = .{
                         .date = .{
                             .time = time(instant(.{}) catch unreachable),
@@ -369,44 +624,36 @@ pub fn StaticRoute(
 
                 const successful_header_set =
                     _setResultHeader(
-                        enforced_headers_type,
+                        Info.enforced_headers_type,
                         request,
-                        &enforced_headers,
+                        &var_set.enforced_headers,
                         allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!successful_header_set)
                     return;
             } else if (comptime MethodType == .GET) {
                 // Read body
-                comptime status_code = .ok;
-
-                var body_buffer: [ResourceType.sr_options.max_bytes + 1]u8 = undefined;
-                const body = cwd().readFile(ResourceType.file_path, &body_buffer) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash")))
-                        processor.readFileCrash(err);
+                var_set.result_body = cwd().readFile(ResourceType.file_path, &var_set.result_body_buffer) catch |err| {
+                    if (comptime Info.has_orp_read_file_crash)
+                        var_set.orp.readFileCrash(err);
                     unreachable;
                 };
-                if (body.len >= body_buffer.len) {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "readFileCrash")))
-                        processor.readFileCrash(error.FileToBig);
+                if (var_set.result_body.len >= var_set.result_body_buffer.len) {
+                    if (comptime Info.has_orp_read_file_crash)
+                        var_set.orp.readFileCrash(error.FileToBig);
                     unreachable;
                 }
 
                 // Set EnforcedHeaders
-                const enforced_headers_type =
-                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
-                        .has_result_body = true,
-                    })));
-
-                var enforced_headers: enforced_headers_type = .{
+                var_set.enforced_headers = .{
                     .data = .{
                         .date = .{
                             .time = time(instant(.{}) catch unreachable),
                         },
                         .content_length = .{
-                            .length = body.len,
+                            .length = var_set.result_body.len,
                         },
                         .content_type = .{
                             .media_type = ResourceType.infered_media_type,
@@ -416,33 +663,31 @@ pub fn StaticRoute(
 
                 const successful_header_set =
                     _setResultHeader(
-                        enforced_headers_type,
+                        Info.enforced_headers_type,
                         request,
-                        &enforced_headers,
+                        &var_set.enforced_headers,
                         allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (comptime Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!successful_header_set)
                     return;
 
                 // Send body
-                request.sendBody(body) catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                        processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                request.sendBody(var_set.result_body) catch |err| {
+                    if (comptime Info.has_orp_send_body_error)
+                        var_set.orp.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
             } else unreachable;
 
-            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                processor.success(status_code);
-            request.setStatus(status_code);
+            if (comptime Info.has_orp_success)
+                var_set.orp.success(Info.status);
+            request.setStatus(Info.status);
         }
 
         /// Calls API Method
-        ///
-        /// Correctness of `request` is checked in respective parsing functions
         fn _callAPIMethod(
             self: *StaticRouteType,
             comptime MethodType: Method,
@@ -450,158 +695,103 @@ pub fn StaticRoute(
             context: *ContextType,
             request: *const Request,
         ) void {
+            // Get Info
+            const Info = APIMethodInfo(MethodType);
+
+            // Get VariablesSet
+            var var_set: Info.VariablesSet = undefined;
+
             // Init OnRequestProcessor
-            var processor: (OnRequestProcessorType orelse void) = undefined;
-            if (comptime OnRequestProcessorType != null) {
-                processor.init(StaticRouteType, MethodType, allocator, context, request);
-                defer processor.deinit();
+            if (comptime Info.has_orp) {
+                var_set.orp.init(StaticRouteType, MethodType, allocator, context, request);
+                defer var_set.orp.deinit();
             }
 
-            if (comptime !hasMethod(ResourceType.controller_t, methodToLower(MethodType))) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidMethod")))
-                    processor.invalidMethod(.not_implemented);
+            // Method check
+            if (comptime !Info.has_method) {
+                if (comptime Info.has_orp_invalid_method)
+                    var_set.orp.invalidMethod(.not_implemented);
                 request.setStatus(.not_implemented);
                 return;
             }
 
-            const method_fn = @field(ResourceType.controller_t, methodToLower(MethodType));
-            const method_type = @TypeOf(method_fn);
-            const method_parameters_type = MethodParameters(method_type);
-
-            // Create ResourceParameters
-            const resource_parameters_type = ResourceParameters(method_parameters_type);
-
-            var resource_parameters: resource_parameters_type = undefined;
-
-            // Create ResourceResult
-            const resource_result_type = ResourceResult(method_parameters_type);
-
-            var resource_result: resource_result_type = undefined;
-
-            // Get HeaderParameters and ResultHeader info
-            comptime var header_parameters_field: ?StructField = null;
-            comptime var result_header_field: ?StructField = null;
-            comptime var body_parameters_found: ?type = null;
-            comptime var result_body_field: ?StructField = null;
-            comptime var result_redirect_field: ?StructField = null;
-
-            inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
-                switch (field.type.parameters_type) {
-                    inline .header => header_parameters_field = field,
-                    inline .body => body_parameters_found = field.type,
-                    inline else => {},
-                }
-            }
-            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
-                switch (field.type.result_type) {
-                    inline .body => result_body_field = field,
-                    inline .header => result_header_field = field,
-                    inline .redirect => result_redirect_field = field,
-                }
-            }
-
-            const header_parameters_type =
-                comptime if (header_parameters_field == null)
-                    HeaderParameters(RequiredHeaders(RequiredHeadersTag.generate(.{
-                        .has_body_parameters = body_parameters_found != null,
-                        .has_authorization = resource_options.authorize != null,
-                        .has_result_body = result_body_field != null,
-                    })))
-                else
-                    header_parameters_field.?.type;
-
-            const result_header_type =
-                comptime if (result_header_field == null)
-                    ResultHeader(EnforcedHeaders(EnforcedHeadersTag.generate(.{
-                        .has_result_body = result_body_field != null,
-                    })))
-                else
-                    result_header_field.?.type;
-
             // Parse RequiredHeaders or HeaderParameters
-            var header_parameters: header_parameters_type = undefined;
-            var header_parameters_ptr: *header_parameters_type = undefined;
-
-            if (comptime header_parameters_field == null) {
-                // RequiredHeaders
-                const successful_header_parse =
-                    _parseHeaderParameters(
-                        header_parameters_type,
-                        request,
-                        &header_parameters,
-                        allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
-                    );
-
-                if (!successful_header_parse)
-                    return;
-
-                header_parameters_ptr = &header_parameters;
-            } else {
+            if (comptime Info.has_header_parameters) {
                 // HeaderParameters
-                const parameters_ptr = fieldPtr(
-                    resource_parameters_type,
-                    header_parameters_field.?.name,
-                    &resource_parameters,
+                var_set.header_parameters_ptr = fieldPtr(
+                    Info.resource_parameters_type,
+                    Info.header_parameters_field.?.name,
+                    &var_set.resource_parameters,
                 );
 
                 const successful_header_parse =
                     _parseHeaderParameters(
-                        header_parameters_field.?.type,
+                        Info.header_parameters_type,
                         request,
-                        parameters_ptr,
+                        var_set.header_parameters_ptr,
                         allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (comptime Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!successful_header_parse)
                     return;
+            } else {
+                // RequiredHeaders
+                var_set.header_parameters_ptr = &var_set.required_header_parameters;
 
-                header_parameters_ptr = parameters_ptr;
-            }
-
-            // Content headers
-            if (comptime body_parameters_found != null) {
-                const successful_content_headers_validation =
-                    _validateContentHeaders(
-                        &body_parameters_found.?.allowed_media_types_array,
-                        &header_parameters_ptr.data.content_length,
-                        &header_parameters_ptr.data.content_type,
+                const successful_header_parse =
+                    _parseHeaderParameters(
+                        Info.header_parameters_type,
                         request,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        &var_set.required_header_parameters,
+                        allocator,
+                        if (comptime Info.has_orp) &var_set.orp else {},
                     );
 
-                if (!successful_content_headers_validation)
+                if (!successful_header_parse)
                     return;
             }
 
             // Authorization
-            var claims_set: if (AuthorizationProcessorType != null) AuthorizationProcessorType.?.claims_set_t else void = undefined;
-
-            if (comptime Options.authorize != null) {
+            if (comptime Info.has_authorization) {
                 const successful_authorization =
                     _authorize(
                         MethodType,
                         self.authorization_processor,
-                        &header_parameters_ptr.data.authorization,
-                        &claims_set,
+                        &var_set.header_parameters_ptr.data.authorization,
+                        &var_set.claims_set,
                         request,
                         allocator,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!successful_authorization)
                     return;
             }
 
+            // Content headers
+            if (comptime Info.has_body_parameters) {
+                const successful_content_headers_validation =
+                    _validateContentHeaders(
+                        &Info.body_parameters_found.?.allowed_media_types_array,
+                        &var_set.header_parameters_ptr.data.content_length,
+                        &var_set.header_parameters_ptr.data.content_type,
+                        request,
+                        if (comptime Info.has_orp) &var_set.orp else {},
+                    );
+
+                if (!successful_content_headers_validation)
+                    return;
+            }
+
             // Accept
-            if (result_body_field != null) {
+            if (comptime Info.has_result_body) {
                 const succesful_accept =
                     _acceptable(
-                        result_body_field.?.type.result_media_type,
-                        &header_parameters_ptr.data.accept,
+                        Info.result_body_field.?.type.result_media_type,
+                        &var_set.header_parameters_ptr.data.accept,
                         request,
-                        if (OnRequestProcessorType != null) &processor else {},
+                        if (comptime Info.has_orp) &var_set.orp else {},
                     );
 
                 if (!succesful_accept)
@@ -609,75 +799,92 @@ pub fn StaticRoute(
             }
 
             // Parse all yet to be parsed parameters
-            var query_parsed: ?bool = if (request.query == null) null else false;
-            var body_parsed: ?bool = if (request.body == null) null else false;
+            var_set.query_parsed = if (request.query == null) null else false;
+            var_set.body_parsed = if (request.body == null) null else false;
 
-            inline for (@typeInfo(resource_parameters_type).@"struct".fields) |field| {
+            inline for (@typeInfo(Info.resource_parameters_type).@"struct".fields) |field| {
                 const parameters_ptr = fieldPtr(
-                    resource_parameters_type,
+                    Info.resource_parameters_type,
                     field.name,
-                    &resource_parameters,
+                    &var_set.resource_parameters,
                 );
 
                 switch (field.type.parameters_type) {
                     inline .path => {
                         // Path
-                        field.type.parse(Path, request, parameters_ptr, allocator) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                                processor.invalidParameters(.path, .not_found, err);
+                        field.type.parse(
+                            Path,
+                            request,
+                            parameters_ptr,
+                            allocator,
+                        ) catch |err| {
+                            if (comptime Info.has_orp_invalid_parameters)
+                                var_set.orp.invalidParameters(.path, .not_found, err);
                             request.setStatus(.not_found);
                             return;
                         };
                     },
                     inline .query => {
                         // Query
-                        field.type.parse(request, parameters_ptr, allocator) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                                processor.invalidParameters(.query, .not_found, err);
+                        field.type.parse(
+                            request,
+                            parameters_ptr,
+                            allocator,
+                        ) catch |err| {
+                            if (comptime Info.has_orp_invalid_parameters)
+                                var_set.orp.invalidParameters(.query, .not_found, err);
                             request.setStatus(.not_found);
                             return;
                         };
 
-                        query_parsed = true;
+                        var_set.query_parsed = true;
                     },
                     inline .header => {
                         // Header
+                        // Already parsed
                     },
                     inline .body => {
                         // Body
-                        field.type.parse(request, parameters_ptr, &header_parameters_ptr.data.content_length, &header_parameters_ptr.data.content_type, allocator) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                                processor.invalidParameters(.body, .bad_request, err);
+                        field.type.parse(
+                            request,
+                            parameters_ptr,
+                            &var_set.header_parameters_ptr.data.content_length,
+                            &var_set.header_parameters_ptr.data.content_type,
+                            allocator,
+                        ) catch |err| {
+                            if (comptime Info.has_orp_invalid_parameters)
+                                var_set.orp.invalidParameters(.body, .bad_request, err);
                             request.setStatus(.bad_request);
                             return;
                         };
 
-                        body_parsed = true;
+                        var_set.body_parsed = true;
                     },
                 }
             }
 
-            if (!(query_parsed orelse true)) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidRequest")))
-                    processor.invalidRequest(.not_found, error.ExcessQuery);
+            // Check for ExcessQuery and ExcessBody
+            if (!(var_set.query_parsed orelse true)) {
+                if (comptime Info.has_orp_invalid_request)
+                    var_set.orp.invalidRequest(.not_found, error.ExcessQuery);
                 request.setStatus(.not_found);
                 return;
             }
-            if (!(body_parsed orelse true)) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidRequest")))
-                    processor.invalidRequest(.bad_request, error.ExcessBody);
+            if (!(var_set.body_parsed orelse true)) {
+                if (comptime Info.has_orp_invalid_request)
+                    var_set.orp.invalidRequest(.bad_request, error.ExcessBody);
                 request.setStatus(.bad_request);
                 return;
             }
 
             // Set null to any optional result
-            inline for (@typeInfo(resource_result_type).@"struct".fields) |field| {
+            inline for (@typeInfo(Info.resource_result_type).@"struct".fields) |field| {
                 if (comptime @typeInfo(field.type.structure) == .optional) {
                     const result_field_ptr =
                         fieldPtr(
-                            resource_result_type,
+                            Info.resource_result_type,
                             field.name,
-                            &resource_result,
+                            &var_set.resource_result,
                         );
 
                     result_field_ptr.data = null;
@@ -687,86 +894,128 @@ pub fn StaticRoute(
             // Call method
             const call_result = @call(
                 .never_inline,
-                method_fn,
+                Info.method_fn,
                 _buildMethodParameters(
-                    MethodParameters(method_type),
-                    &resource_parameters,
-                    if (AuthorizationProcessorType != null) &claims_set else void,
+                    Info.method_parameters_type,
+                    &var_set.resource_parameters,
+                    if (comptime Info.has_ap) &var_set.claims_set else {},
                     context,
                     allocator,
-                    &resource_result,
+                    &var_set.resource_result,
                 ),
             );
 
             // Get status
-            var status: StatusCode = undefined;
-            if (comptime @typeInfo(@TypeOf(call_result)) == .error_union) {
-                status = call_result catch |err| {
-                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "controllerError")))
-                        processor.controllerError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+            if (comptime Info.has_error_return) {
+                var_set.status = call_result catch |err| {
+                    if (comptime Info.has_orp_controller_error)
+                        var_set.orp.controllerError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                     request.setStatus(.internal_server_error);
                     return;
                 };
-            } else status = call_result;
+            } else var_set.status = call_result;
 
             // Get result pointers
-            const result_body_ptr =
-                if (comptime result_body_field != null)
-                    fieldPtr(resource_result_type, result_body_field.?.name, &resource_result)
-                else
-                    void;
-            const result_header_ptr =
-                if (comptime result_header_field != null)
-                    fieldPtr(resource_result_type, result_header_field.?.name, &resource_result)
-                else
-                    void;
+            if (comptime Info.has_result_header)
+                var_set.result_header_ptr =
+                    fieldPtr(
+                        Info.resource_result_type,
+                        Info.result_header_field.?.name,
+                        &var_set.resource_result,
+                    );
+
+            if (comptime Info.has_result_body)
+                var_set.result_body_ptr =
+                    fieldPtr(
+                        Info.resource_result_type,
+                        Info.result_body_field.?.name,
+                        &var_set.resource_result,
+                    );
+
+            if (comptime Info.has_result_redirect)
+                var_set.result_redirect_ptr =
+                    fieldPtr(
+                        Info.resource_result_type,
+                        Info.result_redirect_field.?.name,
+                        &var_set.resource_result,
+                    );
 
             // Get ResultBody
-            var result_body_buffer: []u8 = undefined;
-
-            if (comptime result_body_field != null) {
+            if (comptime Info.has_result_body) {
                 body_format_blk: {
-                    if (comptime @typeInfo(result_body_field.?.type.structure) == .optional)
-                        if (result_body_ptr.data != null) {
-                            if (!isStatusCodeSuccess(status)) {
-                                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
-                                    processor.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
+                    if (comptime Info.is_result_body_optional.?)
+                        if (var_set.result_body_ptr.data != null) {
+                            if (!isStatusCodeSuccess(var_set.status)) {
+                                if (comptime Info.has_orp_match_status_to_result_crash)
+                                    var_set.orp.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
                                 unreachable;
                             }
                         } else {
-                            if (comptime result_header_field != null) {
-                                if (result_header_ptr.data != null) {
-                                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
-                                        processor.resultCompositionCrash(error.MissingResultBody);
+                            if (comptime Info.has_result_header) {
+                                if (var_set.result_header_ptr.data != null) {
+                                    if (comptime Info.has_orp_result_composition_crash)
+                                        var_set.orp.resultCompositionCrash(error.MissingResultBody);
                                     unreachable;
                                 } else break :body_format_blk;
                             } else break :body_format_blk;
                         };
 
-                    result_body_ptr.format(&result_body_buffer, allocator) catch |err| {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "formatResultCrash")))
-                            processor.formatResultCrash(.body, err);
+                    var_set.result_body_ptr.format(&var_set.result_body_buffer, allocator) catch |err| {
+                        if (comptime Info.has_orp_format_result_crash)
+                            var_set.orp.formatResultCrash(.body, err);
                         unreachable;
                     };
                 }
             }
 
             // Set ResultHeader or EnforcedHeaders
-            if (comptime result_header_field == null) {
+            if (comptime Info.has_result_header) {
+                // ResultHeader
+                header_format_blk: {
+                    if (comptime Info.is_result_header_optional.?)
+                        if (var_set.result_header_ptr.data != null) {
+                            if (!isStatusCodeSuccess(var_set.status)) {
+                                if (comptime Info.has_orp_match_status_to_result_crash)
+                                    var_set.orp.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
+                                unreachable;
+                            }
+                        } else {
+                            if (comptime Info.has_result_body) {
+                                if (var_set.result_body_ptr.data != null) {
+                                    if (comptime Info.has_orp_result_composition_crash)
+                                        var_set.orp.resultCompositionCrash(error.MissingResultHeader);
+                                    unreachable;
+                                } else break :header_format_blk;
+                            } else break :header_format_blk;
+                        };
+
+                    const successful_header_set =
+                        _setResultHeader(
+                            Info.result_header_type,
+                            request,
+                            var_set.result_header_ptr,
+                            allocator,
+                            if (comptime Info.has_orp) &var_set.orp else {},
+                        );
+
+                    if (!successful_header_set)
+                        return;
+                }
+            } else {
                 // EnforcedHeaders
-                if (isStatusCodeSuccess(status)) {
-                    const result_header: result_header_type =
-                        if (comptime result_body_field != null)
+                if (isStatusCodeSuccess(var_set.status)) {
+                    var_set.enforced_result_header =
+                        if (comptime Info.has_result_body)
                             .{
                                 .data = .{
                                     .date = .{
                                         .time = time(instant(.{}) catch unreachable),
                                     },
                                     .content_length = .{
-                                        .length = result_body_buffer.len,
+                                        .length = var_set.result_body_buffer.len,
                                     },
                                     .content_type = .{
-                                        .media_type = result_body_field.?.type.result_media_type,
+                                        .media_type = Info.result_body_field.?.type.result_media_type,
                                     },
                                 },
                             }
@@ -781,43 +1030,11 @@ pub fn StaticRoute(
 
                     const successful_header_set =
                         _setResultHeader(
-                            result_header_type,
+                            Info.result_header_type,
                             request,
-                            &result_header,
+                            &var_set.enforced_result_header,
                             allocator,
-                            if (OnRequestProcessorType != null) &processor else {},
-                        );
-
-                    if (!successful_header_set)
-                        return;
-                }
-            } else {
-                // ResultHeader
-                header_format_blk: {
-                    if (comptime @typeInfo(result_header_field.?.type.structure) == .optional)
-                        if (result_header_ptr.data != null) {
-                            if (!isStatusCodeSuccess(status)) {
-                                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
-                                    processor.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
-                                unreachable;
-                            }
-                        } else {
-                            if (comptime result_body_field != null) {
-                                if (result_body_ptr.data != null) {
-                                    if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
-                                        processor.resultCompositionCrash(error.MissingResultHeader);
-                                    unreachable;
-                                } else break :header_format_blk;
-                            } else break :header_format_blk;
-                        };
-
-                    const successful_header_set =
-                        _setResultHeader(
-                            result_header_type,
-                            request,
-                            result_header_ptr,
-                            allocator,
-                            if (OnRequestProcessorType != null) &processor else {},
+                            if (comptime Info.has_orp) &var_set.orp else {},
                         );
 
                     if (!successful_header_set)
@@ -825,73 +1042,105 @@ pub fn StaticRoute(
                 }
             }
 
-            const result_redirect_ptr =
-                if (comptime result_redirect_field != null)
-                    fieldPtr(resource_result_type, result_redirect_field.?.name, &resource_result)
-                else
-                    void;
+            // Status code checking
+            switch (var_set.status) {
+                .created => {
+                    // Must have Location result header
+                    if (!Info.has_result_header_location or (Info.is_result_header_optional.? and var_set.result_header_ptr.data == null)) {
+                        if (comptime Info.has_orp_match_status_to_result_crash)
+                            var_set.orp.matchStatusCodeToResultCrash(.header, error.MissingLocation);
+                        unreachable;
+                    }
+                    if (Info.is_result_header_location_optional) {
+                        const location_ptr = fieldPtr(
+                            Info.result_header_structure,
+                            Info.result_header_location_field.?.name,
+                            if (comptime Info.is_result_header_optional) &var_set.result_header_ptr.*.? else var_set.result_header_ptr,
+                        );
 
-            if (isStatusCodeSuccess(status)) {
-                if (comptime result_redirect_field != null) {
-                    if ((@typeInfo(result_redirect_field.?.type.structure) == .optional and result_redirect_ptr.data != null) or @typeInfo(result_redirect_field.?.type.structure) != .optional) {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
-                            processor.matchStatusCodeToResultCrash(.redirect, error.NonRedirectStatusCode);
+                        if (location_ptr.* == null) {
+                            if (comptime Info.has_orp_match_status_to_result_crash)
+                                var_set.orp.matchStatusCodeToResultCrash(.header, error.MissingLocation);
+                            unreachable;
+                        }
+                    }
+                },
+                .no_content, .not_modified => {
+                    // Mustn't have result body
+                    if (comptime Info.has_result_body) {
+                        if ((Info.is_result_body_optional.? and var_set.result_body_ptr.data != null) or !Info.is_result_body_optional.?) {
+                            if (comptime Info.has_orp_match_status_to_result_crash)
+                                var_set.orp.matchStatusCodeToResultCrash(.body, error.ForbiddenResultBody);
+                            unreachable;
+                        }
+                    }
+                },
+                else => {},
+            }
+
+            if (isStatusCodeSuccess(var_set.status)) {
+                // Success status
+                if (comptime Info.has_result_redirect) {
+                    if ((Info.is_result_redirect_optional.? and var_set.result_redirect_ptr.data != null) or !Info.is_result_redirect_optional.?) {
+                        if (comptime Info.has_orp_match_status_to_result_crash)
+                            var_set.orp.matchStatusCodeToResultCrash(.redirect, error.NonRedirectStatusCode);
                         unreachable;
                     }
                 }
 
                 // Send ResultBody
-                if (comptime result_body_field != null) {
-                    if (@typeInfo(result_body_field.?.type.structure) != .optional or result_body_ptr.data != null)
-                        request.sendBody(result_body_buffer) catch |err| {
-                            if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "sendBodyError")))
-                                processor.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                if (comptime Info.has_result_body) {
+                    if (Info.is_result_body_optional.? or var_set.result_body_ptr.data != null)
+                        request.sendBody(var_set.result_body_buffer) catch |err| {
+                            if (comptime Info.has_orp_send_body_error)
+                                var_set.orp.sendBodyError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                             request.setStatus(.internal_server_error);
                             return;
                         };
                 }
 
                 // Set status code
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "success")))
-                    processor.success(status);
-                request.setStatus(status);
-            } else if (isStatusCodeRedirect(status)) {
-                if (comptime result_header_field != null) {
-                    if ((@typeInfo(result_header_field.?.type.structure) == .optional and result_header_ptr.data != null) or @typeInfo(result_header_field.?.type.structure) != .optional) {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
-                            processor.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
+                if (comptime Info.has_orp_success)
+                    var_set.orp.success(var_set.status);
+                request.setStatus(var_set.status);
+            } else if (isStatusCodeRedirect(var_set.status)) {
+                // Redirect status
+                if (comptime Info.has_result_header) {
+                    if ((Info.is_result_header_optional.? and var_set.result_header_ptr.data != null) or !Info.is_result_header_optional.?) {
+                        if (comptime Info.has_orp_match_status_to_result_crash)
+                            var_set.orp.matchStatusCodeToResultCrash(.header, error.NonSuccessStatusCode);
                         unreachable;
                     }
                 }
-                if (comptime result_body_field != null) {
-                    if ((@typeInfo(result_body_field.?.type.structure) == .optional and result_body_ptr.data != null) or @typeInfo(result_body_field.?.type.structure) != .optional) {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "matchStatusCodeToResultCrash")))
-                            processor.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
+                if (comptime Info.has_result_body) {
+                    if ((Info.is_result_body_optional.? and var_set.result_body_ptr.data != null) or !Info.is_result_body_optional.?) {
+                        if (comptime Info.has_orp_match_status_to_result_crash)
+                            var_set.orp.matchStatusCodeToResultCrash(.body, error.NonSuccessStatusCode);
                         unreachable;
                     }
                 }
 
                 // Set ResultRedirect
-                if (comptime result_redirect_field != null) {
-                    if (@typeInfo(result_redirect_field.?.type.structure) == .optional and result_redirect_ptr.data == null) {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "resultCompositionCrash")))
-                            processor.resultCompositionCrash(error.MissingResultRedirect);
+                if (comptime Info.has_result_redirect) {
+                    if (Info.is_result_redirect_optional.? and var_set.result_redirect_ptr.data == null) {
+                        if (comptime Info.has_orp_result_composition_crash)
+                            var_set.orp.resultCompositionCrash(error.MissingResultRedirect);
                         unreachable;
                     }
 
                     request.redirectTo(
-                        if (comptime @typeInfo(result_redirect_field.?.type.structure) == .optional) result_redirect_ptr.data.? else result_redirect_ptr.data,
-                        status,
+                        if (comptime Info.is_result_redirect_optional.?) var_set.result_redirect_ptr.data.? else var_set.result_redirect_ptr.data,
+                        var_set.status,
                     ) catch |err| {
-                        if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirectError")))
-                            processor.redirectError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
+                        if (comptime Info.has_orp_redirect_error)
+                            var_set.orp.redirectError(.internal_server_error, err, if (comptime IsDebug) @errorReturnTrace().?.* else {});
                         request.setStatus(.internal_server_error);
                         return;
                     };
                 }
 
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "redirect")))
-                    processor.redirect(status);
+                if (comptime Info.has_orp_redirect)
+                    var_set.orp.redirect(var_set.status);
             }
         }
 
@@ -1002,38 +1251,6 @@ pub fn StaticRoute(
             return true;
         }
 
-        fn _validateContentHeaders(
-            comptime AllowedMediaTypes: []const MediaType,
-            content_length: *const ContentLength,
-            content_type: *const ContentType,
-            request: *const Request,
-            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
-        ) bool {
-            if ((request.body orelse "").len != content_length.length) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                    processor.invalidParameters(.header, .bad_request, error.InvalidContentLength);
-                request.setStatus(.bad_request);
-                return false;
-            }
-
-            var allowed_media_type: ?*const MediaType = null;
-            inline for (AllowedMediaTypes) |media_type| media_type_loop: {
-                if (!MediaType.areOverlapping(content_type.media_type, media_type))
-                    break :media_type_loop;
-
-                allowed_media_type = &media_type;
-            }
-
-            if (allowed_media_type == null) {
-                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
-                    processor.invalidParameters(.header, .unsupported_media_type, error.InvalidContentType);
-                request.setStatus(.unsupported_media_type);
-                return false;
-            }
-
-            return true;
-        }
-
         fn _authorize(
             comptime MethodType: Method,
             authorization_processor: *const (AuthorizationProcessorType.?),
@@ -1085,6 +1302,38 @@ pub fn StaticRoute(
                 },
                 .authorized => return true,
             }
+        }
+
+        fn _validateContentHeaders(
+            comptime AllowedMediaTypes: []const MediaType,
+            content_length: *const ContentLength,
+            content_type: *const ContentType,
+            request: *const Request,
+            processor: if (OnRequestProcessorType != null) *(OnRequestProcessorType.?) else void,
+        ) bool {
+            if ((request.body orelse "").len != content_length.length) {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                    processor.invalidParameters(.header, .bad_request, error.InvalidContentLength);
+                request.setStatus(.bad_request);
+                return false;
+            }
+
+            var allowed_media_type: ?*const MediaType = null;
+            inline for (AllowedMediaTypes) |media_type| media_type_loop: {
+                if (!MediaType.areOverlapping(content_type.media_type, media_type))
+                    break :media_type_loop;
+
+                allowed_media_type = &media_type;
+            }
+
+            if (allowed_media_type == null) {
+                if (comptime (OnRequestProcessorType != null and hasMethod(OnRequestProcessorType.?, "invalidParameters")))
+                    processor.invalidParameters(.header, .unsupported_media_type, error.InvalidContentType);
+                request.setStatus(.unsupported_media_type);
+                return false;
+            }
+
+            return true;
         }
 
         fn _acceptable(

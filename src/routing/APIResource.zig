@@ -279,6 +279,11 @@ pub fn APIResource(comptime Controller: type, comptime Options: ResourceOptions)
                                             "Duplicate result Body found in {s}.{s}",
                                             .{ @typeName(Controller), decl.name },
                                         ));
+                                    if (eql(u8, valid_method_name_found.?, "head"))
+                                        @compileError(comptimePrint(
+                                            "Method HEAD with result Body found in {s}.{s}",
+                                            .{ @typeName(Controller), decl.name },
+                                        ));
                                     result_body_found = param_info.child;
                                 } else if (isResultRedirect(param_info.child)) {
                                     // Result redirect

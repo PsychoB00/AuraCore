@@ -8,6 +8,7 @@ const isResourceResult = core.routing.isResourceResult;
 /// Result for redirecting
 ///
 /// - `Structure` can be either []const u8 or ?[]const u8
+/// - `Structure` can be an optional type only if either ResultHeader or ResultBody are defined in endpoint
 pub fn ResultRedirect(comptime Structure: type) type {
     return struct {
         const ResultRedirectType = @This();

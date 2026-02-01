@@ -23,7 +23,8 @@ const formatLeaky = JsonInterpreter.formatLeaky;
 
 /// Result for larger and more complex data
 ///
-/// - `Structure` is a type representing content of the body, can be optional type.
+/// - `Structure` is a type representing content of the body, can be optional type
+/// - `Structure` can be an optional type only if ResultRedirect is defined in endpoint
 /// - `ResultMediaType` is a MediaType which specify parsing
 /// - `ResultMediaType` mustn't be a wildcard
 /// - `Structure` must be valid parsing type for `ResultMediaType'
