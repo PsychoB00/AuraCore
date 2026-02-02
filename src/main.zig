@@ -8,6 +8,7 @@ const Writer = std.Io.Writer;
 const core = @import("core.zig");
 
 const Environment = core.context.Environment;
+const unhandledRequestRedirect = core.context.unhandledRequestRedirect;
 
 const ApplicationType = core.application.Application;
 
@@ -35,6 +36,7 @@ const ResultRedirect = core.routing.ResultRedirect;
 
 /// Third Party
 const zap = @import("zap");
+const Request = zap.Request;
 const StatusCode = zap.http.StatusCode;
 
 const zeit = @import("zeit");
@@ -71,6 +73,17 @@ const Context = struct {
         self.logger.join();
 
         self.environment.deinit();
+    }
+
+    pub fn unhandledRequest(self: *Context, allocator: Allocator, request: Request) anyerror!void {
+        unhandledRequestRedirect(
+            "/pages/hello_world.html",
+            Context,
+            LoggingOnRequestProcessor(Context),
+            self,
+            allocator,
+            request,
+        );
     }
 };
 
@@ -137,6 +150,10 @@ const Application = ApplicationType(
         .port = 3000,
         .thread_count = 2,
         .worker_count = 1,
+        .use_tls = .{
+            .private_key_filepath = "zig-out/resources/secret/tls_key.key",
+            .public_cert_filepath = "zig-out/resources/secret/tls_cert.crt",
+        },
     },
     Router,
 );

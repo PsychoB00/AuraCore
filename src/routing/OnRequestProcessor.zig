@@ -73,12 +73,51 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
                 if (request.query != null) "?" else "",
                 if (request.query != null) request.query.? else "",
             }) catch catch_blk: {
-                _ = bufPrint(
+                break :catch_blk bufPrint(
                     &self.request_scope,
                     "{s}",
                     .{comptime methodToUpper(MethodType) ++ " @ " ++ RouteType.static_path},
                 ) catch unreachable;
-                break :catch_blk comptime methodToUpper(MethodType) ++ " @ " ++ RouteType.static_path;
+            };
+
+            self.request_scope_len = request_scope.len;
+
+            self.logger
+                .log(.info)
+                .time()
+                .scopeFmt("{s}", .{self.request_scope[0..self.request_scope_len]})
+                .print("Received request")
+                .commit();
+        }
+
+        pub fn initUnhandledRequest(
+            self: *OnRequestProcessorType,
+            comptime MethodType: Method,
+            _: Allocator,
+            context: *ContextType,
+            request: *const Request,
+        ) void {
+            const min_scope_len: usize = (comptime methodToUpper(MethodType) ++ " @ /...").len;
+            comptime if (min_scope_len >= logger_t.log_t.options.scope_len)
+                @compileError("Max length of log scope must be bigger then the default scope of request");
+
+            self.timer = Timer.start() catch unreachable;
+            self.logger = getLogger(logger_t, context);
+
+            self.request_scope = undefined;
+            const request_scope = bufPrint(&self.request_scope, methodToUpper(MethodType) ++ " @ {s}{s}{s}", .{
+                if (request.path != null) request.path.? else "",
+                if (request.query != null) "?" else "",
+                if (request.query != null) request.query.? else "",
+            }) catch catch_blk: {
+                break :catch_blk bufPrint(
+                    &self.request_scope,
+                    "{s}{s}...",
+                    .{
+                        comptime methodToUpper(MethodType) ++ " @ ",
+                        if (request.path != null) request.path.?[0..(logger_t.log_t.options.scope_len - min_scope_len)] else "",
+                    },
+                ) catch unreachable;
             };
 
             self.request_scope_len = request_scope.len;
@@ -330,6 +369,8 @@ pub fn LoggingOnRequestProcessor(comptime ContextType: type) type {
 ///     - `context_t` must be decleration of type
 /// - `Type` must have declaration of method for initializing, named "init"
 ///     - `init` must be decleration of method with signature fn (*Type, comptime type, comptime Method, Allocator, *Type.context_t, *const Request) void
+/// - `Type` must have declaration of method for initializing in unhandledRequest, named "initUnhandledRequest"
+///     - `initUnhandledRequest` must be decleration of method with signature fn (*Type, comptime Method, Allocator, *Type.context_t, *const Request) void
 /// - `Type` must have declaration of method for deinitializing, named "deinit"
 ///     - `deinit` must be decleration of method with signature fn (*Type) void
 pub fn isOnRequestProcessor(comptime Type: type) bool {
@@ -345,9 +386,14 @@ pub fn isOnRequestProcessor(comptime Type: type) bool {
         hasMethod(Type, "init") and
         @TypeOf(Type.init) == fn (*Type, comptime type, comptime Method, Allocator, *Type.context_t, *const Request) void;
 
+    const has_init_unhandled_request =
+        has_context_type and
+        hasMethod(Type, "initUnhandledRequest") and
+        @TypeOf(Type.initUnhandledRequest) == fn (*Type, comptime Method, Allocator, *Type.context_t, *const Request) void;
+
     const has_deinit =
         hasMethod(Type, "deinit") and
         @TypeOf(Type.deinit) == fn (*Type) void;
 
-    return has_init and has_deinit;
+    return has_init and has_init_unhandled_request and has_deinit;
 }

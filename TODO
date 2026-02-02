@@ -25,8 +25,15 @@ log:
     - [] Change IsOnRequestProcessor to cover everyone of it's methods
     - [] Add actor field
 
+context:
+    - [x] Add catch all for requests
+
 routing:
+    - TLS:
+        - [x] Get working TLS
     - StaticRoute:
         - [x] Add status code checking
         - [x] Clean up StaticRoute and implement Info
+    - ResultHeader:
+        - [] Add auto fill on EnforcedHeaders
 
