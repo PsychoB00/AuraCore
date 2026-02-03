@@ -2,7 +2,6 @@ general:
     - DONT FORGET TO INCR THE VERSIONS
 0.0.12:
     - [] Do inline for checking functions etc.
-    - [o] Break down trait check functions.
 
 documantation:
     - [] Create docs for json standard
@@ -14,26 +13,7 @@ testing:
 units:
     - [] Create units
 
-net:
-    - headers:
-        - [] Check headers for inconsistencies in parsing, formating etc.
-        - [x] Add Location
-        - [x] Add Allow
-
 log:
-    - [] Move LoggingOnRequestProcessor to log
-    - [] Change IsOnRequestProcessor to cover everyone of it's methods
+    - [x] Move LoggingOnRequestProcessor to log
+    - [x] Change IsOnRequestProcessor to cover everyone of its methods
     - [] Add actor field
-
-context:
-    - [x] Add catch all for requests
-
-routing:
-    - TLS:
-        - [x] Get working TLS
-    - StaticRoute:
-        - [x] Add status code checking
-        - [x] Clean up StaticRoute and implement Info
-    - ResultHeader:
-        - [] Add auto fill on EnforcedHeaders
-

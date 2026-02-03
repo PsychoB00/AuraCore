@@ -14,7 +14,7 @@ const ApplicationType = core.application.Application;
 
 const RouterType = core.routing.Router;
 const JWTAuthorizationProcessor = core.jwt.JWTAuthorizationProcessor;
-const LoggingOnRequestProcessor = core.routing.LoggingOnRequestProcessor;
+const LoggingOnRequestProcessor = core.log.LoggingOnRequestProcessor;
 
 const StaticResource = core.routing.StaticResource;
 const APIResource = core.routing.APIResource;

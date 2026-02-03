@@ -22,7 +22,9 @@ const buildin = @import("builtin");
 const IsDebug = buildin.mode == .Debug;
 
 /// Aura
-const core = @import("core.zig");
+const core = @import("../core.zig");
+
+pub const LoggingOnRequestProcessor = @import("LoggingOnRequestProcessor.zig").LoggingOnRequestProcessor;
 
 const Environment = core.context.Environment;
 
@@ -34,6 +36,11 @@ const zeit = @import("zeit");
 
 const TimeZone = zeit.TimeZone;
 const Instant = zeit.Instant;
+
+const zap = @import("zap");
+
+const Request = zap.Request;
+const StatusCode = zap.http.StatusCode;
 
 pub const State = enum(u8) {
     empty,

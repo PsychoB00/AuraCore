@@ -15,7 +15,6 @@ pub const AuthorizationResult = authorization_processor.AuthorizationResult;
 pub const isAuthorizationProcessor = authorization_processor.isAuthorizationProcessor;
 
 const on_request_processor = @import("OnRequestProcessor.zig");
-pub const LoggingOnRequestProcessor = on_request_processor.LoggingOnRequestProcessor;
 pub const isOnRequestProcessor = on_request_processor.isOnRequestProcessor;
 
 const router = @import("Router.zig");
